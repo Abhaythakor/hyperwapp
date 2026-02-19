@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Detection represents a single identified technology on a target.
 type Detection struct {
 	Domain     string    `json:"domain" csv:"domain"`         // example.com
 	URL        string    `json:"url" csv:"url"`               // https://example.com
@@ -16,7 +17,7 @@ type Detection struct {
 	Timestamp  time.Time `json:"timestamp" csv:"timestamp"`   // RFC3339
 }
 
-// OfflineInput represents the normalized input from offline sources
+// OfflineInput represents the normalized input from offline sources.
 type OfflineInput struct {
 	Domain  string
 	URL     string

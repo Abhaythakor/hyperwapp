@@ -19,7 +19,7 @@ type Engine interface {
 	Detect(headers map[string][]string, body []byte, sourceHint string) ([]model.Detection, error)
 }
 
-// WappalyzerEngine implements the Engine interface using wappalyzer.
+// WappalyzerEngine implements the Engine interface using wappalyzergo.
 type WappalyzerEngine struct {
 	client wappalyzerClient
 }

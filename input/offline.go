@@ -21,12 +21,18 @@ import (
 type OfflineFormat string
 
 const (
-	FormatUnknown    OfflineFormat = "unknown"
-	FormatFFF        OfflineFormat = "fff"
-	FormatKatanaDir  OfflineFormat = "katana-dir"
+	// FormatUnknown indicates an unidentified offline format.
+	FormatUnknown OfflineFormat = "unknown"
+	// FormatFFF indicates the fff tool output format.
+	FormatFFF OfflineFormat = "fff"
+	// FormatKatanaDir indicates a directory containing katana response files.
+	FormatKatanaDir OfflineFormat = "katana-dir"
+	// FormatKatanaFile indicates a single katana response file.
 	FormatKatanaFile OfflineFormat = "katana-file"
-	FormatRawHTTP    OfflineFormat = "raw-http"
-	FormatBodyOnly   OfflineFormat = "body-only"
+	// FormatRawHTTP indicates a raw HTTP response dump.
+	FormatRawHTTP OfflineFormat = "raw-http"
+	// FormatBodyOnly indicates a file treated as a raw response body.
+	FormatBodyOnly OfflineFormat = "body-only"
 )
 
 // DetectOfflineFormat identifies the format of the given path (file or directory).
@@ -67,10 +73,6 @@ func DetectOfflineFormat(path string) OfflineFormat {
 		util.Debug("Detected Body Only File: %s", path)
 		return FormatBodyOnly
 	}
-
-	// If it's a directory but not FFF or Katana, or a file not matching other formats.
-	util.Debug("Falling back to Body Only or Unknown format for %s", path)
-	return FormatBodyOnly
 }
 
 // CountOffline performing a fast pass to count total targets without parsing.
