@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // FetchOnline fetches the content of a URL and returns headers and body.
@@ -20,7 +20,7 @@ func FetchOnline(target model.Target, timeout int) (map[string][]string, []byte,
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create request for %s: %w", target.URL, err)
 	}
-	req.Header.Set("User-Agent", "hyperwapp/1.0.0")
+	req.Header.Set("User-Agent", "github.com/Abhaythakor/hyperwapp/1.0.0")
 
 	resp, err := client.Do(req)
 	if err != nil {

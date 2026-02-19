@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // ParseBodyOnly parses a file or directory as raw body input.

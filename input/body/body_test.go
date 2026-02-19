@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperwapp/input/body"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/input/body"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 func TestParseBodyOnlyHTML(t *testing.T) {

@@ -1,4 +1,4 @@
-module hyperwapp
+module github.com/Abhaythakor/hyperwapp
 
 go 1.25.5
 

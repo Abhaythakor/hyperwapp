@@ -1,7 +1,7 @@
 package model_test
 
 import (
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/model"
 	"testing"
 )
 

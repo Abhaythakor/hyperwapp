@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 const (

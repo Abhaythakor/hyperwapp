@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"hyperwapp/aggregate" // Added aggregate package import
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate" // Added aggregate package import
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // CSVWriter implements the Writer interface for CSV output.

@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // normalizeTarget validates and normalizes a given input string into a Target struct.

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"hyperwapp/cmd"
+	"github.com/Abhaythakor/hyperwapp/cmd"
 )
 
 func main() {

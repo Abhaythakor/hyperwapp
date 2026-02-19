@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"hyperwapp/model"
-	"hyperwapp/util" // Added import for util package
-	"hyperwapp/util/http"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util" // Added import for util package
+	"github.com/Abhaythakor/hyperwapp/util/http"
 )
 
 func IsKatanaFileContent(data []byte) bool {

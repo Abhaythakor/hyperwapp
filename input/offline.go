@@ -8,13 +8,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 
-	"hyperwapp/input/body"
-	"hyperwapp/input/fff"
-	"hyperwapp/input/katana"
-	"hyperwapp/input/raw"
+	"github.com/Abhaythakor/hyperwapp/input/body"
+	"github.com/Abhaythakor/hyperwapp/input/fff"
+	"github.com/Abhaythakor/hyperwapp/input/katana"
+	"github.com/Abhaythakor/hyperwapp/input/raw"
 )
 
 // OfflineFormat defines the type of offline input.

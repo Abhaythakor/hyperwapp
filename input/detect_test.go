@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"hyperwapp/input"
+	"github.com/Abhaythakor/hyperwapp/input"
 )
 
 // Helper function to create dummy files/directories for testing

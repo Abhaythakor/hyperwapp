@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"hyperwapp/aggregate" // Added aggregate package import
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate" // Added aggregate package import
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // JSONWriter implements the Writer interface for JSON output with disk-backed streaming.

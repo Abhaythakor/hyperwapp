@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"hyperwapp/aggregate"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // TXTWriter implements the Writer interface for plain text output.

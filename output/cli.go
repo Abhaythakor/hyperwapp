@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings" // Added strings
 
-	"hyperwapp/aggregate"
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/aggregate"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // CLIWriter implements the Writer interface for CLI output.

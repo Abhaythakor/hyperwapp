@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync" // Added import
 
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // ParseFFF parses an fff directory structure and returns a channel of OfflineInput.

@@ -8,14 +8,14 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
-	"hyperwapp/config" // Added config package import
-	"hyperwapp/detect" // Added detect package import
-	"hyperwapp/input"
-	"hyperwapp/input/online" // Added input/online package import
-	"hyperwapp/model"        // Added model package import for InputTypeOnline
-	"hyperwapp/output"       // Added output package import
-	"hyperwapp/progress"     // Added progress package import
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/config" // Added config package import
+	"github.com/Abhaythakor/hyperwapp/detect" // Added detect package import
+	"github.com/Abhaythakor/hyperwapp/input"
+	"github.com/Abhaythakor/hyperwapp/input/online" // Added input/online package import
+	"github.com/Abhaythakor/hyperwapp/model"        // Added model package import for InputTypeOnline
+	"github.com/Abhaythakor/hyperwapp/output"       // Added output package import
+	"github.com/Abhaythakor/hyperwapp/progress"     // Added progress package import
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 var (

@@ -5,8 +5,8 @@ import (
 	"os"
 	"sync"
 
-	"hyperwapp/aggregate"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // JSONLWriter implements the Writer interface for JSON Lines output.

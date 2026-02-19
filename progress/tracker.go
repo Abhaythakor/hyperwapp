@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // Tracker manages and displays progress updates.

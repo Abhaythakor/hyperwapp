@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperwapp/input/raw"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/input/raw"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 func TestParseRawHTTPSingleResponse(t *testing.T) {

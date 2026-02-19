@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"hyperwapp/model"
-	"hyperwapp/util"
-	"hyperwapp/util/http"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/util/http"
 )
 
 func ContainsHeaderLine(data []byte) bool {

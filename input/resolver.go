@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"hyperwapp/model"
-	"hyperwapp/util"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // ResolveInput takes an input source (file, stdin, or direct arg) and returns a slice of targets.

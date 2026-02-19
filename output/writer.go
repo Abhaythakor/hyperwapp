@@ -1,8 +1,8 @@
 package output
 
 import (
-	"hyperwapp/aggregate" // Added aggregate package import
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate" // Added aggregate package import
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // Writer defines the interface for outputting detection results.

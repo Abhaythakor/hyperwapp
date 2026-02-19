@@ -1,7 +1,7 @@
 package aggregate
 
 import (
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/model"
 	"sort"
 )
 

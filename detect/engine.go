@@ -5,7 +5,7 @@ import (
 	"time"
 
 	wappalyzer "github.com/projectdiscovery/wappalyzergo"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // wappalyzerClient defines the interface for the Wappalyzer client.

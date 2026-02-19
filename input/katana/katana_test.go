@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperwapp/input/katana"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/input/katana"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 func TestParseKatanaFile(t *testing.T) {

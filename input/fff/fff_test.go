@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"hyperwapp/input/fff" // Import the fff package
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/input/fff" // Import the fff package
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 func TestParseFFFBasic(t *testing.T) {

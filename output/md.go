@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"hyperwapp/aggregate"
-	"hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/aggregate"
+	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // MDWriter implements the Writer interface for Markdown output.
