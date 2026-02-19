@@ -9,13 +9,13 @@ This page provides multiple real-world scenarios for using HyperWapp effectively
 ### Basic Single URL
 Detect technologies on a single site with default settings.
 ```bash
-hyperwapp https://news.airbnb.com
+hyperwapp -u https://news.airbnb.com
 ```
 
 ### High-Speed Bulk Scan
 Scan a list of 1 million URLs using 200 concurrent workers.
 ```bash
-hyperwapp urls.txt -c 200 -f jsonl -o my_scan.jsonl
+hyperwapp -l urls.txt -c 200 -f jsonl -o my_scan.jsonl
 ```
 
 ### Piping from Subfinder/Httpx

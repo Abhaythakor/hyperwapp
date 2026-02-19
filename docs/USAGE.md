@@ -6,10 +6,21 @@ This document provides a detailed breakdown of every command-line flag available
 
 ## 1. Input Flags
 
+### `-u, --url <string>`
+*   **Type:** String
+*   **Description:** Single URL to scan. 
+*   **Example:** `hyperwapp -u https://example.com`
+
+### `-l, --list <file>`
+*   **Type:** String
+*   **Description:** Path to a file containing a list of URLs to scan (one per line).
+*   **Example:** `hyperwapp -l urls.txt`
+
 ### `-offline`
 *   **Type:** Boolean
 *   **Default:** `false`
 *   **Description:** Enables Offline Mode. Instead of treating the input as a URL or URL list, HyperWapp will recursively walk the provided directory path to find and parse stored HTTP responses (Katana, FFF, etc.).
+*   **Example:** `hyperwapp -offline ./data/`
 
 ### `-auto`
 *   **Type:** Boolean
@@ -47,7 +58,7 @@ This document provides a detailed breakdown of every command-line flag available
 
 ### `-o, --output <file>`
 *   **Type:** String
-*   **Description:** Path to the file where results should be saved. If omitted, results are only printed to the CLI.
+*   **Description:** Path to the file where results should be saved. Even when saving to a file, results are still printed to the CLI.
 
 ### `-f, --format <format>`
 *   **Type:** String
@@ -73,7 +84,7 @@ This document provides a detailed breakdown of every command-line flag available
 ### `--cpus <int>`
 *   **Type:** Integer
 *   **Default:** `0` (All available)
-*   **Description:** Limits the number of physical CPU cores the Go runtime will use.
+*   **Description:** Limits the number of physical CPU cores the Go runtime will use (GOMAXPROCS).
 
 ### `--timeout <int>`
 *   **Type:** Integer
@@ -101,7 +112,7 @@ This document provides a detailed breakdown of every command-line flag available
 
 ---
 
-## 6. Advanced Flags
+## 6. Utility Flags
 
 ### `--resume`
 *   **Type:** Boolean

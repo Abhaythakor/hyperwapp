@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime" // Added for GOMAXPROCS
+	"runtime"
 	"sync"
 
-	"github.com/spf13/cobra"
-	"github.com/Abhaythakor/hyperwapp/config" // Added config package import
-	"github.com/Abhaythakor/hyperwapp/detect" // Added detect package import
+	"github.com/Abhaythakor/hyperwapp/config"
+	"github.com/Abhaythakor/hyperwapp/detect"
 	"github.com/Abhaythakor/hyperwapp/input"
-	"github.com/Abhaythakor/hyperwapp/input/online" // Added input/online package import
-	"github.com/Abhaythakor/hyperwapp/model"        // Added model package import for InputTypeOnline
-	"github.com/Abhaythakor/hyperwapp/output"       // Added output package import
-	"github.com/Abhaythakor/hyperwapp/progress"     // Added progress package import
+	"github.com/Abhaythakor/hyperwapp/input/online"
+	"github.com/Abhaythakor/hyperwapp/model"
+	"github.com/Abhaythakor/hyperwapp/output"
+	"github.com/Abhaythakor/hyperwapp/progress"
 	"github.com/Abhaythakor/hyperwapp/util"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -27,13 +27,15 @@ var (
 	domain       bool
 	outputFile   string
 	outputFormat string
-	concurrency  int // Renamed from threads
-	cpus         int // Added cpus for GOMAXPROCS
+	url          string
+	urlList      string
+	concurrency  int
+	cpus         int
 	timeout      int
 	forceColor   bool
 	disableColor bool
 	verbose      bool
-	silent       bool // Added silent flag
+	silent       bool
 	resume       bool
 	update       bool
 	showVersion  bool
@@ -41,10 +43,10 @@ var (
 	wappalyzerEngine detect.Engine
 )
 
-var resumeMgr *util.ResumeManager // Global resume manager instance
+var resumeMgr *util.ResumeManager
 
 var rootCmd = &cobra.Command{
-	Use:   "hyperwapp [input] [flags]",
+	Use:   "hyperwapp [flags]",
 	Short: "HyperWapp is a CLI reconnaissance utility",
 	Long: `
    __  __                      _       __                
@@ -54,18 +56,30 @@ var rootCmd = &cobra.Command{
 /_/ /_/\__, / .___/\___/_/     |__/|__/\__,_/ .___/ .___/ 
       /____/_/                             /_/   /_/      
 
-A high-performance CLI tool to detect web technologies using Wappalyzer fingerprints.
+A high-performance, massively scalable CLI tool to detect web technologies using Wappalyzer fingerprints.
 
-Key Features:
-- Powered by ProjectDiscovery's WappalyzerGo.
-- Supports single URLs, URL lists, and piped input.
-- Advanced Offline Mode: Recursively parses results from Katana, FFF, Raw HTTP dumps, or raw body files.
-- Massively Scalable: Disk-backed streaming handles 10,000,000+ targets without memory issues.
-- Resumable: Checkpoint system allows restarting interrupted scans instantly.
-- Multiple Formats: CSV, JSON, TXT, Markdown, and real-time JSONL.
+EXAMPLES:
+  # Online scan (Single URL)
+  hyperwapp -u https://example.com
+  
+  # Online scan (URL list)
+  hyperwapp -l urls.txt -c 50
+  
+  # Offline scan (Recursive directory)
+  hyperwapp -offline ./responses/ -f jsonl -o results.jsonl
+  
+  # Resume an interrupted scan
+  hyperwapp -l massive_list.txt --resume
+
+  # Piping input
+  subfinder -d airbnb.com | httpx | hyperwapp -silent
+
+ADDITIONAL INFO:
+  - Powered by ProjectDiscovery's WappalyzerGo.
+  - Disk-backed streaming handles 10,000,000+ targets with low RAM.
+  - Real-time JSONL output and checkpoint system for reliability.
 `,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Initialize logging and color settings
 		if forceColor {
 			util.SetColorEnabled(true)
 		} else if disableColor {
@@ -93,22 +107,16 @@ Key Features:
 			os.Exit(0)
 		}
 
-		util.Debug("PersistentPreRunE: Verbose flag set to: %t", verbose)
-
-		// Set CPU limit (Parallelism)
 		if cpus > 0 {
-			util.Debug("Limiting CPU usage to %d cores", cpus)
 			runtime.GOMAXPROCS(cpus)
 		}
 
-		// Initialize Wappalyzer engine
 		var err error
 		wappalyzerEngine, err = detect.NewWappalyzerEngine()
 		if err != nil {
 			util.Fatal("Failed to initialize Wappalyzer engine: %v", err)
 		}
 
-		// Initialize Resume Manager
 		resumeMgr, err = util.NewResumeManager(".HyperWapp.resume", resume)
 		if err != nil {
 			util.Warn("Failed to initialize resume manager: %v", err)
@@ -117,97 +125,83 @@ Key Features:
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		var inputModeVal string // Use a distinct name to avoid shadowing inputMode in `setupWriter`
+		var inputModeVal string
 		var inputSource string
 
-		if len(args) > 0 {
+		if urlList != "" {
+			inputSource = urlList
+		} else if url != "" {
+			inputSource = url
+		} else if len(args) > 0 {
 			inputSource = args[0]
 		} else if isInputFromPipe() {
-			inputSource = "-" // Indicate stdin
+			inputSource = "-"
 		}
 
 		if inputSource == "" {
-			util.Fatal("No input provided. Use 'HyperWapp [URL|FILE]' or pipe input.")
+			util.Fatal("No input provided. Use -u, -l, positional argument, or pipe input.")
 		}
 
 		if all && domain {
 			util.Fatal("Flags -all and -domain are mutually exclusive.")
 		}
 
-		var (
-			tracker *progress.Tracker
-			err     error
-		)
-
-		// --- Online/Offline mode logic to populate resultCh and initialize tracker ---
-		var resultCh <-chan []model.Detection // Channel to receive detection batches from workers
-
 		if offline {
 			inputModeVal = "offline"
-			tracker, resultCh = runOffline(inputSource)
-		} else { // Online mode with concurrency
-			inputModeVal = "online"
-			tracker, resultCh = runOnline(inputSource)
-		}
-
-		// --- Process results from resultCh ---
-		// Always initialize CLI writer
-		cliWriter := output.NewCLIWriter(!disableColor)
-		if domain {
-			cliWriter.SetMode("domain")
+			tracker, resultCh := runOffline(inputSource)
+			handleResults(resultCh, tracker, inputModeVal)
 		} else {
-			cliWriter.SetMode("all")
+			inputModeVal = "online"
+			tracker, resultCh := runOnline(inputSource)
+			handleResults(resultCh, tracker, inputModeVal)
 		}
-
-		// Optionally initialize file writer
-		var fileWriter output.Writer
-		if outputFile != "" {
-			fileWriter, err = setupWriter(outputFormat, outputFile, !disableColor, inputModeVal, config.Version, resume)
-			if err != nil {
-				util.Fatal("Failed to set up file writer: %v", err)
-			}
-			if domain {
-				fileWriter.SetMode("domain")
-			} else {
-				fileWriter.SetMode("all")
-			}
-		}
-
-		// Stream detections
-		for detections := range resultCh {
-			// 1. Clear progress line
-			tracker.Clear()
-
-			// 2. Print to CLI
-			if err := cliWriter.Write(detections); err != nil {
-				util.Warn("Error writing to CLI: %v", err)
-			}
-
-			// 3. Write to File
-			if fileWriter != nil {
-				if err := fileWriter.Write(detections); err != nil {
-					util.Warn("Error writing to file: %v", err)
-				}
-			}
-
-			// 4. Restore progress line immediately
-			tracker.Refresh()
-		}
-
-		tracker.Done() // Ensure tracker finishes
-
-		// Finalize
-		cliWriter.Close()
-		if fileWriter != nil {
-			fileWriter.Close()
-		}
-		resumeMgr.Cleanup()
 	},
 }
 
-// processOnlineTarget fetches, detects, and enriches detections for a single online target.
+func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker, inputModeVal string) {
+	cliWriter := output.NewCLIWriter(!disableColor)
+	if domain {
+		cliWriter.SetMode("domain")
+	} else {
+		cliWriter.SetMode("all")
+	}
+
+	var fileWriter output.Writer
+	if outputFile != "" {
+		var err error
+		fileWriter, err = setupWriter(outputFormat, outputFile, !disableColor, inputModeVal, config.Version, resume)
+		if err != nil {
+			util.Fatal("Failed to set up file writer: %v", err)
+		}
+		if domain {
+			fileWriter.SetMode("domain")
+		} else {
+			fileWriter.SetMode("all")
+		}
+	}
+
+	for detections := range resultCh {
+		tracker.Clear()
+		if err := cliWriter.Write(detections); err != nil {
+			util.Warn("Error writing to CLI: %v", err)
+		}
+		if fileWriter != nil {
+			if err := fileWriter.Write(detections); err != nil {
+				util.Warn("Error writing to file: %v", err)
+			}
+		}
+		tracker.Refresh()
+	}
+
+	tracker.Done()
+	cliWriter.Close()
+	if fileWriter != nil {
+		fileWriter.Close()
+	}
+	resumeMgr.Cleanup()
+}
+
 func processOnlineTarget(target model.Target, timeout int) []model.Detection {
-	util.Debug("  Scanning URL: %s", target.URL)
 	headers, body, err := online.FetchOnline(target, timeout)
 	if err != nil {
 		util.Warn("Failed to fetch %s: %v", target.URL, err)
@@ -220,7 +214,6 @@ func processOnlineTarget(target model.Target, timeout int) []model.Detection {
 		return nil
 	}
 
-	// Enrich detections with domain and URL from target
 	for i := range detections {
 		detections[i].Domain = target.Domain
 		detections[i].URL = target.URL
@@ -228,14 +221,11 @@ func processOnlineTarget(target model.Target, timeout int) []model.Detection {
 	return detections
 }
 
-// isInputFromPipe checks if the application is receiving input from a pipe.
 func isInputFromPipe() bool {
 	fi, err := os.Stdin.Stat()
 	if err != nil {
 		return false
 	}
-	// A common way to detect piped input in Go is to check if it's not a character device (terminal).
-	// This is more reliable than checking fi.Size() which can be 0 for pipes.
 	return (fi.Mode() & os.ModeCharDevice) == 0
 }
 
@@ -245,12 +235,10 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		util.Fatal("Error resolving absolute path for input: %v", err)
 	}
 
-	// Phase 1: Fast Discovery (Counting)
 	tracker := progress.NewTracker(0, silent, !disableColor)
 	var total uint32
 	if resume && resumeMgr.TotalCount > 0 {
 		total = resumeMgr.TotalCount
-		util.Debug("Resuming scan with saved total: %d", total)
 	} else {
 		total, err = input.CountOffline(absInputSource, concurrency)
 		if err != nil {
@@ -261,7 +249,6 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 	tracker.AddTotal(total)
 	tracker.FinalizeTotal()
 
-	// Phase 2: Scanning
 	offlineInputCh, err := input.ParseOffline(absInputSource)
 	if err != nil {
 		util.Fatal("Error initializing offline parsing: %v", err)
@@ -276,7 +263,6 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		numWorkers = 1
 	}
 
-	// Discovery Loop
 	go func() {
 		defer close(offlineWorkerInputCh)
 		for offInput := range offlineInputCh {
@@ -284,7 +270,6 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		}
 	}()
 
-	// Worker Pool
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -296,7 +281,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 				}
 
 				if resumeMgr.IsCompleted(id) {
-					tracker.Increment()
+					tracker.IncrementSuccess()
 					continue
 				}
 
@@ -334,12 +319,10 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 }
 
 func runOnline(inputSource string) (*progress.Tracker, <-chan []model.Detection) {
-	targets, err := input.ResolveInput(inputSource, false) // Explicitly false for online mode
+	targets, err := input.ResolveInput(inputSource, false)
 	if err != nil {
 		util.Fatal("Error resolving input: %v", err)
 	}
-
-	util.Debug("Resolved %d targets for online scanning:", len(targets))
 
 	tracker := progress.NewTracker(uint32(len(targets)), silent, !disableColor)
 	targetCh := make(chan model.Target)
@@ -357,7 +340,7 @@ func runOnline(inputSource string) (*progress.Tracker, <-chan []model.Detection)
 			defer wg.Done()
 			for target := range targetCh {
 				if resumeMgr.IsCompleted(target.URL) {
-					tracker.IncrementSuccess() // Count as success since it's already done
+					tracker.IncrementSuccess()
 					continue
 				}
 				detections := processOnlineTarget(target, timeout)
@@ -412,28 +395,39 @@ func Execute() {
 }
 
 func init() {
+	// Input Group
+	rootCmd.PersistentFlags().StringVarP(&url, "url", "u", "", "Single URL to scan")
+	rootCmd.PersistentFlags().StringVarP(&urlList, "list", "l", "", "File containing list of URLs to scan")
 	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "Offline mode: recursively parse directory structure (Katana, FFF, etc.)")
+
+	// Detection Strategy Group
 	rootCmd.PersistentFlags().BoolVar(&headersOnly, "headers-only", false, "Detect technologies using HTTP headers only")
 	rootCmd.PersistentFlags().BoolVar(&bodyOnly, "body-only", false, "Detect technologies using HTTP body only")
 	rootCmd.PersistentFlags().BoolVar(&auto, "auto", true, "Detect using both headers and body (default)")
 
+	// Output Mode Group
 	rootCmd.PersistentFlags().BoolVar(&all, "all", false, "Output results per URL (default)")
 	rootCmd.PersistentFlags().BoolVar(&domain, "domain", false, "Aggregate and output results per unique domain")
 
+	// Export Group
 	rootCmd.PersistentFlags().StringVarP(&outputFile, "output", "o", "", "Write output to specified file")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "format", "f", "cli", "Output format: csv, json, jsonl, txt, md")
 
+	// Performance Group
 	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", 10, "Number of concurrent workers (goroutines)")
 	rootCmd.PersistentFlags().IntVarP(&concurrency, "threads", "t", 10, "Alias for --concurrency")
 	rootCmd.PersistentFlags().IntVar(&cpus, "cpus", 0, "Limit number of physical CPU cores to use (GOMAXPROCS)")
 	rootCmd.PersistentFlags().IntVar(&timeout, "timeout", 10, "HTTP timeout in seconds for online scanning")
 
+	// UI & Debug Group
 	rootCmd.PersistentFlags().BoolVar(&forceColor, "color", false, "Force colored CLI output")
 	rootCmd.PersistentFlags().BoolVar(&disableColor, "no-color", false, "Disable colored CLI output")
 	rootCmd.PersistentFlags().BoolVar(&disableColor, "mono", false, "Alias for --no-color")
-	rootCmd.PersistentFlags().BoolVar(&silent, "silent", false, "Display results only (suppress tracker and info logs)")
+	rootCmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "Display results only (suppress tracker and info logs)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose debug logging")
+
+	// Utility Group
 	rootCmd.PersistentFlags().BoolVar(&resume, "resume", false, "Resume an interrupted scan using .HyperWapp.resume checkpoint")
 	rootCmd.PersistentFlags().BoolVar(&update, "update", false, "Update Wappalyzer fingerprints from ProjectDiscovery GitHub")
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "Show tool version and fingerprints information")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose debug logging")
 }

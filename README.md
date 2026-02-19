@@ -34,12 +34,12 @@ go install github.com/Abhaythakor/hyperwapp@latest
 
 ### 1. Online Scan (Single URL)
 ```bash
-hyperwapp https://example.com
+hyperwapp -u https://example.com
 ```
 
 ### 2. URL List with High Concurrency
 ```bash
-cat urls.txt | hyperwapp -c 100 -f jsonl -o results.jsonl
+hyperwapp -l urls.txt -c 100 -f jsonl -o results.jsonl
 ```
 
 ### 3. Advanced Offline Scan (Recursive)
