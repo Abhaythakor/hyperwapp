@@ -97,7 +97,7 @@ func CountOffline(path string, concurrency int) (uint32, error) {
 	}
 
 	var wg sync.WaitGroup
-	
+
 	// We walk the top level and spawn goroutines for each top-level entry
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -198,7 +198,7 @@ func IsFFFDirectory(path string) bool {
 	util.Debug("IsFFFDirectory: Checking directory %s", path)
 	foundHeaders := false
 	foundBody := false
-	
+
 	// Check a few levels deep for FFF files
 	_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -225,6 +225,7 @@ func IsFFFDirectory(path string) bool {
 	})
 	return foundHeaders && foundBody
 }
+
 // IsKatanaDirectory checks if a directory matches the katana output structure.
 func IsKatanaDirectory(path string) bool {
 	util.Debug("IsKatanaDirectory: Checking directory %s", path)

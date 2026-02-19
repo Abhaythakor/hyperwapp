@@ -10,7 +10,7 @@ import (
 
 func TestParseFFFBasic(t *testing.T) {
 	testRoot := "../../testdata/fff/simple"
-	
+
 	inputsCh, err := fff.ParseFFF(testRoot)
 	if err != nil {
 		t.Fatalf("ParseFFF failed: %v", err)
@@ -157,32 +157,32 @@ func TestParseFFFMultiDomain(t *testing.T) {
 
 func TestDeriveURL(t *testing.T) {
 	tests := []struct {
-		name     string
+		name       string
 		domainRoot string
-		filePath string
-		domain   string
-		expected string
+		filePath   string
+		domain     string
+		expected   string
 	}{
 		{
-			name:     "root file",
+			name:       "root file",
 			domainRoot: "/tmp/fff/example.com",
-			filePath: "/tmp/fff/example.com/a94a8fe5ccb19ba61c4c0873d391e987982fbbd3.headers",
-			domain:   "example.com",
-			expected: "https://example.com",
+			filePath:   "/tmp/fff/example.com/a94a8fe5ccb19ba61c4c0873d391e987982fbbd3.headers",
+			domain:     "example.com",
+			expected:   "https://example.com",
 		},
 		{
-			name:     "nested file",
+			name:       "nested file",
 			domainRoot: "/tmp/fff/example.com",
-			filePath: "/tmp/fff/example.com/path/to/file/a94a8fe5ccb19ba61c4c0873d391e987982fbbd3.body",
-			domain:   "example.com",
-			expected: "https://example.com/path/to/file",
+			filePath:   "/tmp/fff/example.com/path/to/file/a94a8fe5ccb19ba61c4c0873d391e987982fbbd3.body",
+			domain:     "example.com",
+			expected:   "https://example.com/path/to/file",
 		},
 		{
-			name:     "complex path",
+			name:       "complex path",
 			domainRoot: "/tmp/fff/www.divvyhomes.com",
-			filePath: "/tmp/fff/www.divvyhomes.com/_next/static/chunks/app/-layout-/privacy/page-c471709c92969dc3.js/a9b0e705b4b8c5b9da592350e29126ecf467a846.body",
-			domain:   "www.divvyhomes.com",
-			expected: "https://www.divvyhomes.com/_next/static/chunks/app/-layout-/privacy/page-c471709c92969dc3.js",
+			filePath:   "/tmp/fff/www.divvyhomes.com/_next/static/chunks/app/-layout-/privacy/page-c471709c92969dc3.js/a9b0e705b4b8c5b9da592350e29126ecf467a846.body",
+			domain:     "www.divvyhomes.com",
+			expected:   "https://www.divvyhomes.com/_next/static/chunks/app/-layout-/privacy/page-c471709c92969dc3.js",
 		},
 	}
 

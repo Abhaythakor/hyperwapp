@@ -1,8 +1,8 @@
 package aggregate
 
 import (
-	"sort"
 	"hyperwapp/model"
+	"sort"
 )
 
 // AggregatedDomain represents detections grouped by domain.
@@ -14,7 +14,7 @@ type AggregatedDomain struct {
 
 // AggregateByDomain groups a slice of detections by their domain.
 func AggregateByDomain(allDetections []model.Detection) []AggregatedDomain {
-	domainMap := make(map[string]map[string]struct{}) // domain -> URL -> struct{} (for unique URLs)
+	domainMap := make(map[string]map[string]struct{})  // domain -> URL -> struct{} (for unique URLs)
 	detectionMap := make(map[string][]model.Detection) // domain -> []Detection
 
 	for _, d := range allDetections {

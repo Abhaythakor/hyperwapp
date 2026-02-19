@@ -13,13 +13,13 @@ import (
 
 // JSONWriter implements the Writer interface for JSON output with disk-backed streaming.
 type JSONWriter struct {
-	filePath      string
-	inputType     string
-	version       string
-	tempFile      *os.File
-	written       bool   // To prevent double writing in Close
-	Mode          string // all | domain
-	mu            sync.Mutex
+	filePath  string
+	inputType string
+	version   string
+	tempFile  *os.File
+	written   bool   // To prevent double writing in Close
+	Mode      string // all | domain
+	mu        sync.Mutex
 }
 
 // NewJSONWriter creates a new JSONWriter.
@@ -58,8 +58,8 @@ func (w *JSONWriter) SetMode(mode string) {
 	w.Mode = mode
 }
 
-// WriteAggregated is NOT disk-backed in this simple implementation because aggregation 
-// naturally requires buffering or a multi-pass approach. 
+// WriteAggregated is NOT disk-backed in this simple implementation because aggregation
+// naturally requires buffering or a multi-pass approach.
 // However, we'll make it work by reading from the temp file if needed.
 func (w *JSONWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) error {
 	w.written = true
@@ -173,12 +173,12 @@ func (w *JSONWriter) finalizeAllMode(finalFile *os.File) {
 }
 
 func (w *JSONWriter) finalizeDomainMode(finalFile *os.File) {
-	// Aggregation requires grouping. To save RAM, we use a map of Slices, 
+	// Aggregation requires grouping. To save RAM, we use a map of Slices,
 	// but we only store the detections, not the full objects if possible.
 	// For 10M targets, this is the most RAM-intensive part.
-	
+
 	domainMap := make(map[string]*aggregate.AggregatedDomain)
-	
+
 	w.tempFile.Seek(0, 0)
 	decoder := json.NewDecoder(w.tempFile)
 	for {
@@ -186,14 +186,14 @@ func (w *JSONWriter) finalizeDomainMode(finalFile *os.File) {
 		if err := decoder.Decode(&d); err != nil {
 			break
 		}
-		
+
 		if _, ok := domainMap[d.Domain]; !ok {
 			domainMap[d.Domain] = &aggregate.AggregatedDomain{
 				Domain: d.Domain,
 				URLs:   []string{},
 			}
 		}
-		
+
 		// Add unique URL
 		foundURL := false
 		for _, u := range domainMap[d.Domain].URLs {
@@ -205,7 +205,7 @@ func (w *JSONWriter) finalizeDomainMode(finalFile *os.File) {
 		if !foundURL && d.URL != "" {
 			domainMap[d.Domain].URLs = append(domainMap[d.Domain].URLs, d.URL)
 		}
-		
+
 		domainMap[d.Domain].Detections = append(domainMap[d.Domain].Detections, d)
 	}
 

@@ -1,7 +1,5 @@
 package http
 
-
-
 // ExtractHost extracts the host from HTTP headers, falling back to a provided domain.
 // It checks for "Host" and "host" headers.
 func ExtractHost(headers map[string][]string, fallbackDomain string) string {

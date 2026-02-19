@@ -67,7 +67,7 @@ func (w *CLIWriter) Write(detections []model.Detection) error {
 		// news.airbnb.com [jQuery CDN, MySQL, ...]
 		fmt.Fprintf(os.Stdout, "%s [%s]\n", w.color.Cyan(target), strings.Join(techs, ", "))
 	}
-	
+
 	return nil
 }
 

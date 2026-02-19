@@ -253,7 +253,6 @@ func trimDelimiter(data []byte) []byte {
 	return data
 }
 
-
 // parseResponseHeadersKatana parses raw response headers into a map.
 func parseResponseHeadersKatana(r io.Reader) map[string][]string {
 	headers := make(map[string][]string)
@@ -282,8 +281,6 @@ func parseResponseHeadersKatana(r io.Reader) map[string][]string {
 	}
 	return headers
 }
-
-
 
 // parseRequestHeadersKatana parses raw request headers into a map.
 func parseRequestHeadersKatana(r io.Reader) map[string][]string {

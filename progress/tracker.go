@@ -46,13 +46,15 @@ func (t *Tracker) FinalizeTotal() {
 		return
 	}
 	t.finalized.Store(true)
-	t.startTime = time.Now() // Reset timer for scanning phase
+	t.startTime = time.Now()           // Reset timer for scanning phase
 	fmt.Fprintf(os.Stderr, " Done.\n") // Finish the discovery line and move to next
 }
 
 // IncrementSuccess records a successful scan.
 func (t *Tracker) IncrementSuccess() {
-	if !t.enabled { return }
+	if !t.enabled {
+		return
+	}
 	t.success.Add(1)
 	t.completed.Add(1)
 	t.printProgress()
@@ -60,7 +62,9 @@ func (t *Tracker) IncrementSuccess() {
 
 // IncrementError records a failed target.
 func (t *Tracker) IncrementError() {
-	if !t.enabled { return }
+	if !t.enabled {
+		return
+	}
 	t.errors.Add(1)
 	t.completed.Add(1)
 	t.printProgress()
@@ -87,7 +91,7 @@ func (t *Tracker) Increment() {
 	}
 
 	t.completed.Add(1)
-	
+
 	// Only print if the tracker has actually started (i.e., total is known and > 0)
 	// and if we have completed items, to avoid showing Completed:0 initially.
 	if t.started {
@@ -109,7 +113,7 @@ func (t *Tracker) Done() {
 	if t.started {
 		t.Clear()
 	}
-	
+
 	completed := t.completed.Load()
 	success := t.success.Load()
 	errors := t.errors.Load()
@@ -170,4 +174,3 @@ func (t *Tracker) printProgress() {
 	// ANSI escape code to clear the current line (2K) and move cursor to beginning (\r)
 	fmt.Fprintf(os.Stderr, "\033[2K\r%s", progressLine)
 }
-

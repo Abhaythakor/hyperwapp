@@ -198,7 +198,6 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 	return inputs
 }
 
-
 // parseHeadersFile parses an fff .headers file into an http.Header map.
 func parseHeadersFile(path string) (map[string][]string, error) {
 	file, err := os.Open(path)
@@ -209,7 +208,7 @@ func parseHeadersFile(path string) (map[string][]string, error) {
 
 	headers := make(map[string][]string)
 	scanner := bufio.NewScanner(file)
-	
+
 	// Read the first line and check for HTTP status
 	if scanner.Scan() {
 		firstLine := scanner.Text()

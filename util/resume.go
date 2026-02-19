@@ -95,7 +95,7 @@ func (rm *ResumeManager) MarkCompleted(id string) {
 	}
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	
+
 	rm.completed[id] = struct{}{}
 	_, _ = rm.file.WriteString(id + "\n")
 }

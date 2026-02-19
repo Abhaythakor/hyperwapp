@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
-	"hyperwapp/config"    // Added config package import
-	"hyperwapp/detect"    // Added detect package import
+	"hyperwapp/config" // Added config package import
+	"hyperwapp/detect" // Added detect package import
 	"hyperwapp/input"
 	"hyperwapp/input/online" // Added input/online package import
 	"hyperwapp/model"        // Added model package import for InputTypeOnline
@@ -19,24 +19,24 @@ import (
 )
 
 var (
-	offline       bool
-	headersOnly   bool
-	bodyOnly      bool
-	auto          bool
-	all           bool
-	domain        bool
-	outputFile    string
-	outputFormat  string
-	concurrency   int // Renamed from threads
-	cpus          int // Added cpus for GOMAXPROCS
-	timeout       int
-	forceColor    bool
-	disableColor  bool
-	verbose       bool
-	silent        bool // Added silent flag
-	resume        bool
-	update        bool
-	showVersion   bool
+	offline      bool
+	headersOnly  bool
+	bodyOnly     bool
+	auto         bool
+	all          bool
+	domain       bool
+	outputFile   string
+	outputFormat string
+	concurrency  int // Renamed from threads
+	cpus         int // Added cpus for GOMAXPROCS
+	timeout      int
+	forceColor   bool
+	disableColor bool
+	verbose      bool
+	silent       bool // Added silent flag
+	resume       bool
+	update       bool
+	showVersion  bool
 
 	wappalyzerEngine detect.Engine
 )
@@ -119,7 +119,7 @@ Key Features:
 	Run: func(cmd *cobra.Command, args []string) {
 		var inputModeVal string // Use a distinct name to avoid shadowing inputMode in `setupWriter`
 		var inputSource string
-		
+
 		if len(args) > 0 {
 			inputSource = args[0]
 		} else if isInputFromPipe() {
@@ -227,8 +227,6 @@ func processOnlineTarget(target model.Target, timeout int) []model.Detection {
 	}
 	return detections
 }
-
-
 
 // isInputFromPipe checks if the application is receiving input from a pipe.
 func isInputFromPipe() bool {
@@ -406,7 +404,6 @@ func setupWriter(outputFormat, outputFile string, colorize bool, inputType strin
 	}
 }
 
-
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -430,7 +427,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVarP(&concurrency, "threads", "t", 10, "Alias for --concurrency")
 	rootCmd.PersistentFlags().IntVar(&cpus, "cpus", 0, "Limit number of physical CPU cores to use (GOMAXPROCS)")
 	rootCmd.PersistentFlags().IntVar(&timeout, "timeout", 10, "HTTP timeout in seconds for online scanning")
-	
+
 	rootCmd.PersistentFlags().BoolVar(&forceColor, "color", false, "Force colored CLI output")
 	rootCmd.PersistentFlags().BoolVar(&disableColor, "no-color", false, "Disable colored CLI output")
 	rootCmd.PersistentFlags().BoolVar(&disableColor, "mono", false, "Alias for --no-color")
@@ -440,4 +437,3 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "Show tool version and fingerprints information")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose debug logging")
 }
-

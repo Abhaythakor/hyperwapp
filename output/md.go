@@ -85,7 +85,7 @@ func (w *MDWriter) Write(detections []model.Detection) error {
 			return fmt.Errorf("failed to write to Markdown file: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 

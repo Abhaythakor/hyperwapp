@@ -64,45 +64,45 @@ func TestDetectOfflineFormat(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name         string
-		setupFunc    func(t *testing.T, path string)
-		path         string
+		name           string
+		setupFunc      func(t *testing.T, path string)
+		path           string
 		expectedFormat input.OfflineFormat
 	}{
 		{
-			name:         "FFF Directory",
-			setupFunc:    createDummyFFFDir,
-			path:         filepath.Join(tmpDir, "fff_test_dir"),
+			name:           "FFF Directory",
+			setupFunc:      createDummyFFFDir,
+			path:           filepath.Join(tmpDir, "fff_test_dir"),
 			expectedFormat: input.FormatFFF,
 		},
 		{
-			name:         "Katana Directory",
-			setupFunc:    createDummyKatanaDir,
-			path:         filepath.Join(tmpDir, "katana_test_dir"),
+			name:           "Katana Directory",
+			setupFunc:      createDummyKatanaDir,
+			path:           filepath.Join(tmpDir, "katana_test_dir"),
 			expectedFormat: input.FormatKatanaDir,
 		},
 		{
-			name:         "Single Katana File",
-			setupFunc:    func(t *testing.T, path string) { createDummyKatanaFile(t, filepath.Join(path, "katana.txt")) },
-			path:         filepath.Join(tmpDir, "katana_test_file", "katana.txt"),
+			name:           "Single Katana File",
+			setupFunc:      func(t *testing.T, path string) { createDummyKatanaFile(t, filepath.Join(path, "katana.txt")) },
+			path:           filepath.Join(tmpDir, "katana_test_file", "katana.txt"),
 			expectedFormat: input.FormatKatanaFile,
 		},
 		{
-			name:         "Raw HTTP File",
-			setupFunc:    func(t *testing.T, path string) { createDummyRawHTTPFile(t, filepath.Join(path, "raw.txt")) },
-			path:         filepath.Join(tmpDir, "raw_test_file", "raw.txt"),
+			name:           "Raw HTTP File",
+			setupFunc:      func(t *testing.T, path string) { createDummyRawHTTPFile(t, filepath.Join(path, "raw.txt")) },
+			path:           filepath.Join(tmpDir, "raw_test_file", "raw.txt"),
 			expectedFormat: input.FormatRawHTTP,
 		},
 		{
-			name:         "Body Only File",
-			setupFunc:    func(t *testing.T, path string) { createDummyBodyOnlyFile(t, filepath.Join(path, "body.html")) },
-			path:         filepath.Join(tmpDir, "body_test_file", "body.html"),
+			name:           "Body Only File",
+			setupFunc:      func(t *testing.T, path string) { createDummyBodyOnlyFile(t, filepath.Join(path, "body.html")) },
+			path:           filepath.Join(tmpDir, "body_test_file", "body.html"),
 			expectedFormat: input.FormatBodyOnly,
 		},
 		{
-			name:         "Non-existent Path",
-			setupFunc:    func(t *testing.T, path string) {}, // No setup, path won't exist
-			path:         filepath.Join(tmpDir, "non_existent"),
+			name:           "Non-existent Path",
+			setupFunc:      func(t *testing.T, path string) {}, // No setup, path won't exist
+			path:           filepath.Join(tmpDir, "non_existent"),
 			expectedFormat: input.FormatUnknown,
 		},
 	}
@@ -114,7 +114,7 @@ func TestDetectOfflineFormat(t *testing.T) {
 				testBasePath = filepath.Dir(tt.path)
 			}
 			tt.setupFunc(t, testBasePath)
-			
+
 			format := input.DetectOfflineFormat(tt.path)
 			if format != tt.expectedFormat {
 				t.Errorf("DetectOfflineFormat(%s) = %s; want %s", tt.path, format, tt.expectedFormat)
@@ -130,7 +130,7 @@ func TestIsDirectoryDetection(t *testing.T) {
 	// Test FFF directory
 	fffDir := filepath.Join(tmpDir, "fff_dir")
 	createDummyFFFDir(t, fffDir) // This creates fff_dir/example.com/a94a8fe5ccb19ba61c4c0873d391e987982fbbd3.{headers,body}
-	
+
 	// `createDummyFFFDir` creates content inside a subdirectory (example.com)
 	// We need to pass the actual directory where the FFF pattern exists to IsFFFDirectory
 	isFFF := input.IsFFFDirectory(fffDir)
@@ -141,7 +141,7 @@ func TestIsDirectoryDetection(t *testing.T) {
 	// Test Katana directory
 	katanaDir := filepath.Join(tmpDir, "katana_dir")
 	createDummyKatanaDir(t, katanaDir) // This creates katana_dir/example.com/index.txt and hash.txt
-	
+
 	// `createDummyKatanaDir` creates content inside a subdirectory (example.com)
 	isKatana := input.IsKatanaDirectory(katanaDir)
 	if !isKatana {
@@ -152,7 +152,7 @@ func TestIsDirectoryDetection(t *testing.T) {
 	neitherDir := filepath.Join(tmpDir, "neither_dir")
 	os.MkdirAll(neitherDir, 0755)
 	createDummyFile(t, filepath.Join(neitherDir, "random.txt"), "some content")
-	
+
 	isFFF = input.IsFFFDirectory(neitherDir)
 	if isFFF {
 		t.Errorf("Expected %s NOT to be an FFF directory, but it was", neitherDir)

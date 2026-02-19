@@ -58,7 +58,7 @@ func ParseRawHTTP(path string) (<-chan model.OfflineInput, error) {
 		defer file.Close()
 
 		rawResponseCh := splitHTTPResponses(file) // Now returns a channel of rawHTTPResponse
-		
+
 		for rawResp := range rawResponseCh {
 			headers := parseRawHeaders(bytes.NewReader(rawResp.Headers)) // Pass io.Reader
 			body := rawResp.Body

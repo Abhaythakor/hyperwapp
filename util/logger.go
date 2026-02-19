@@ -153,7 +153,7 @@ func Fatal(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	timestamp := time.Now().Format("15:04:05") // HH:MM:SS
 	coloredMsg := defaultLogger.color.Red(fmt.Sprintf("[%s] FATAL %s: %s", timestamp, defaultLogger.prefix, msg))
-	
+
 	fmt.Fprintln(os.Stderr, coloredMsg) // Print directly to stderr
 	os.Exit(1)
 }

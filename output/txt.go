@@ -85,7 +85,7 @@ func (w *TXTWriter) Write(detections []model.Detection) error {
 			return fmt.Errorf("failed to write to TXT file: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 

@@ -1,8 +1,8 @@
 package model_test
 
 import (
-	"testing"
 	"hyperwapp/model"
+	"testing"
 )
 
 func TestOfflineInputSchema(t *testing.T) {
