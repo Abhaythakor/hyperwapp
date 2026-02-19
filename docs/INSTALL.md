@@ -18,7 +18,7 @@ go version
 The recommended way to install HyperWapp is using `go install`:
 
 ```bash
-go install github.com/youruser/hyperwapp@latest
+go install github.com/Abhaythakor/hyperwapp@latest
 ```
 
 Ensure your Go bin directory is in your system's `PATH`:
@@ -34,7 +34,7 @@ If you want to modify the code or build it manually:
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/youruser/hyperwapp.git
+    git clone https://github.com/Abhaythakor/hyperwapp.git
     cd hyperwapp
     ```
 

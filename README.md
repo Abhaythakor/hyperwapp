@@ -1,6 +1,6 @@
 # HyperWapp 🚀
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/youruser/hyperwapp)](https://goreportcard.com/report/github.com/youruser/hyperwapp)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Abhaythakor/hyperwapp)](https://goreportcard.com/report/github.com/Abhaythakor/hyperwapp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **HyperWapp** is a high-performance, massively scalable CLI reconnaissance utility designed to detect web technologies using Wappalyzer fingerprints. Whether you are scanning a single URL or an offline dump of **10,000,000 targets**, HyperWapp handles it with ease using disk-backed streaming and zero-RAM aggregation.
@@ -25,7 +25,7 @@ Built upon the powerful foundation of [ProjectDiscovery's WappalyzerGo](https://
 
 ### From Source
 ```bash
-go install github.com/youruser/hyperwapp@latest
+go install github.com/Abhaythakor/hyperwapp@latest
 ```
 
 ---
@@ -68,7 +68,6 @@ For detailed guides, please see:
 
 This tool would not be possible without the incredible work of:
 - [ProjectDiscovery](https://projectdiscovery.io/) for their [wappalyzergo](https://github.com/projectdiscovery/wappalyzergo) library.
-- [Wappalyzer](https://www.wappalyzer.com/) for the original technology fingerprints.
 
 ---
 
