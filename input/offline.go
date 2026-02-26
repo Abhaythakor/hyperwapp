@@ -56,11 +56,17 @@ func DetectOfflineFormat(path string) OfflineFormat {
 		util.Debug("Directory %s is not FFF or Katana directory. Falling back to Body Only.", path)
 		return FormatBodyOnly
 	} else { // It's a file
-		data, err := os.ReadFile(path) // Only call ReadFile if it's actually a file
+		f, err := os.Open(path)
 		if err != nil {
-			util.Warn("Failed to read file %s for format detection: %v", path, err)
+			util.Warn("Failed to open file %s for format detection: %v", path, err)
 			return FormatUnknown
 		}
+		defer f.Close()
+
+		// Only read the first 4KB for detection
+		data := make([]byte, 4096)
+		n, _ := f.Read(data)
+		data = data[:n]
 
 		if katana.IsKatanaFileContent(data) {
 			util.Debug("Detected Katana File: %s", path)
@@ -168,7 +174,16 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int) (<-c
 		case FormatKatanaDir:
 			inputSourceCh, parseErr = katana.ParseKatanaDir(path, skipFunc, concurrency)
 		case FormatKatanaFile:
-			inputSourceCh, parseErr = katana.ParseKatanaFile(path, "", skipFunc)
+			var inputs []model.OfflineInput
+			inputs, parseErr = katana.ParseKatanaFile(path, "", skipFunc)
+			if parseErr == nil {
+				ch := make(chan model.OfflineInput, len(inputs))
+				for _, in := range inputs {
+					ch <- in
+				}
+				close(ch)
+				inputSourceCh = ch
+			}
 		case FormatRawHTTP:
 			inputSourceCh, parseErr = raw.ParseRawHTTP(path, skipFunc, concurrency)
 		case FormatBodyOnly:

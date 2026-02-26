@@ -10,11 +10,11 @@ import (
 )
 
 // JSONLWriter implements the Writer interface for JSON Lines output.
-// It is highly efficient and appendable.
 type JSONLWriter struct {
-	file *os.File
-	mu   sync.Mutex
-	mode string
+	file    *os.File
+	encoder *json.Encoder // Reuse encoder
+	mu      sync.Mutex
+	mode    string
 }
 
 // NewJSONLWriter creates a new JSONLWriter.
@@ -31,16 +31,19 @@ func NewJSONLWriter(filePath string, appendMode bool) (*JSONLWriter, error) {
 		return nil, err
 	}
 
-	return &JSONLWriter{file: file, mode: "all"}, nil
+	return &JSONLWriter{
+		file:    file,
+		encoder: json.NewEncoder(file),
+		mode:    "all",
+	}, nil
 }
 
 func (w *JSONLWriter) Write(detections []model.Detection) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	encoder := json.NewEncoder(w.file)
 	for _, d := range detections {
-		if err := encoder.Encode(d); err != nil {
+		if err := w.encoder.Encode(d); err != nil {
 			return err
 		}
 	}
@@ -54,9 +57,8 @@ func (w *JSONLWriter) SetMode(mode string) {
 func (w *JSONLWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	encoder := json.NewEncoder(w.file)
 	for _, agg := range aggregated {
-		if err := encoder.Encode(agg); err != nil {
+		if err := w.encoder.Encode(agg); err != nil {
 			return err
 		}
 	}

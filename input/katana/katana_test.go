@@ -5,21 +5,15 @@ import (
 	"testing"
 
 	"github.com/Abhaythakor/hyperwapp/input/katana"
-	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 func TestParseKatanaFile(t *testing.T) {
 	testFilePath := "../../testdata/katana/single-file/example.com_request.txt"
 	fallbackDomain := "test.com"
 
-	inputsCh, err := katana.ParseKatanaFile(testFilePath, fallbackDomain, nil)
+	inputs, err := katana.ParseKatanaFile(testFilePath, fallbackDomain, nil)
 	if err != nil {
 		t.Fatalf("ParseKatanaFile failed: %v", err)
-	}
-
-	var inputs []model.OfflineInput
-	for in := range inputsCh {
-		inputs = append(inputs, in)
 	}
 
 	if len(inputs) != 1 {

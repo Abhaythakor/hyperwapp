@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync" // Added sync
 
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/util"
@@ -28,19 +27,6 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 		}
 
 		if fileInfo.IsDir() {
-			fileQueue := make(chan string, 1000)
-			var wg sync.WaitGroup
-
-			for i := 0; i < concurrency; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					for p := range fileQueue {
-						processSingleFile(p, outputCh)
-					}
-				}()
-			}
-
 			err = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 				if err != nil {
 					util.Warn("Error walking directory %s: %v", p, err)
@@ -52,12 +38,10 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 						outputCh <- model.OfflineInput{Path: p, Skipped: true}
 						return nil
 					}
-					fileQueue <- p
+					processSingleFile(p, outputCh)
 				}
 				return nil
 			})
-			close(fileQueue)
-			wg.Wait()
 		} else {
 			// Single file check
 			if skipFunc != nil && skipFunc(path) {

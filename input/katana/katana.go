@@ -51,12 +51,12 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 						domain = ""
 					}
 
-					inputCh, err := ParseKatanaFile(path, domain, skipFunc)
+					inputs, err := ParseKatanaFile(path, domain, skipFunc)
 					if err != nil {
 						util.Warn("Error parsing katana file %s: %v", path, err)
 						continue
 					}
-					for input := range inputCh {
+					for _, input := range inputs {
 						outputCh <- input
 					}
 				}
@@ -92,50 +92,38 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 	return outputCh, nil
 }
 
-// ParseKatanaFile parses a single katana response file and returns a channel of OfflineInput.
-func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput, 1)
-
+// ParseKatanaFile parses a single katana response file and returns a slice of OfflineInput.
+func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([]model.OfflineInput, error) {
 	// Fast check for single file
 	if skipFunc != nil && skipFunc(path) {
-		outputCh <- model.OfflineInput{Path: path, Skipped: true}
-		close(outputCh)
-		return outputCh, nil
+		return []model.OfflineInput{{Path: path, Skipped: true}}, nil
 	}
 
-	go func() {
-		defer close(outputCh)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open katana file %s: %w", path, err)
+	}
+	defer file.Close()
 
-		file, err := os.Open(path)
-		if err != nil {
-			util.Warn("Failed to open katana file %s: %v", path, err)
-			return // Exit goroutine
-		}
-		defer file.Close()
+	parts := splitKatanaRequestResponse(file)
+	if parts == nil {
+		return nil, fmt.Errorf("malformed katana file: %s", path)
+	}
 
-		parts := splitKatanaRequestResponse(file)
-		if parts == nil {
-			util.Warn("Malformed katana file (could not split request/response): %s", path)
-			return // Exit goroutine
-		}
+	requestHeaders := parseRequestHeadersKatana(bytes.NewReader(parts.RequestHeaders))
+	responseHeaders := parseResponseHeadersKatana(bytes.NewReader(parts.ResponseHeaders))
+	body := parts.Body
+	domain := http.ExtractHost(requestHeaders, fallbackDomain)
+	url := reconstructURLKatana(parts.RequestLine, requestHeaders, domain, parts.InitialURL)
 
-		requestHeaders := parseRequestHeadersKatana(bytes.NewReader(parts.RequestHeaders))
-		responseHeaders := parseResponseHeadersKatana(bytes.NewReader(parts.ResponseHeaders))
-		body := parts.Body
-		domain := http.ExtractHost(requestHeaders, fallbackDomain)
-		url := reconstructURLKatana(parts.RequestLine, requestHeaders, domain, parts.InitialURL)
-
-		util.Debug("Created Katana OfflineInput for URL: %s (Domain: %s)", url, domain)
-		outputCh <- model.OfflineInput{
-			Domain:  domain,
-			URL:     url,
-			Headers: responseHeaders,
-			Body:    body,
-			Path:    path, // Track source path
-		}
-	}()
-
-	return outputCh, nil
+	util.Debug("Created Katana OfflineInput for URL: %s (Domain: %s)", url, domain)
+	return []model.OfflineInput{{
+		Domain:  domain,
+		URL:     url,
+		Headers: responseHeaders,
+		Body:    body,
+		Path:    path,
+	}}, nil
 }
 
 // katanaParts represents the split sections of a katana response file.
