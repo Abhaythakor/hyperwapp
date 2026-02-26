@@ -11,31 +11,33 @@ import (
 
 // Tracker manages and displays progress updates.
 type Tracker struct {
-	total     atomic.Uint32
-	completed atomic.Uint32
-	success   atomic.Uint32 // Tracks targets with detections
-	errors    atomic.Uint32 // Tracks timeouts/network errors
-	startTime time.Time
-	quiet     bool
-	enabled   bool
-	color     *util.Colorizer
-	started   bool
-	finalized atomic.Bool // Tracks if discovery is finished
+	total      atomic.Uint32
+	completed  atomic.Uint32
+	success    atomic.Uint32 // Tracks targets with detections
+	errors     atomic.Uint32 // Tracks timeouts/network errors
+	startTime  time.Time
+	lastUpdate time.Time     // New: For throttling
+	quiet      bool
+	enabled    bool
+	color      *util.Colorizer
+	started    bool
+	finalized  atomic.Bool // Tracks if discovery is finished
 }
 
 // NewTracker creates a new progress tracker.
 func NewTracker(total uint32, quiet, colorize bool) *Tracker {
 	t := &Tracker{
-		startTime: time.Now(),
-		quiet:     quiet,
-		enabled:   !quiet,
-		color:     util.NewColorizer(colorize),
+		startTime:  time.Now(),
+		lastUpdate: time.Now(),
+		quiet:      quiet,
+		enabled:    !quiet,
+		color:      util.NewColorizer(colorize),
 	}
 	t.total.Store(total)
 	if total > 0 {
 		t.started = true
 		t.finalized.Store(true) // If total is known at start, it's finalized
-		t.printProgress()
+		t.printProgress(true)   // Force print first update
 	}
 	return t
 }
@@ -57,7 +59,7 @@ func (t *Tracker) IncrementSuccess() {
 	}
 	t.success.Add(1)
 	t.completed.Add(1)
-	t.printProgress()
+	t.printProgress(false)
 }
 
 // IncrementError records a failed target.
@@ -67,7 +69,7 @@ func (t *Tracker) IncrementError() {
 	}
 	t.errors.Add(1)
 	t.completed.Add(1)
-	t.printProgress()
+	t.printProgress(false)
 }
 
 // AddTotal atomically adds to the total count.
@@ -78,9 +80,9 @@ func (t *Tracker) AddTotal(count uint32) {
 	t.total.Add(count)
 	if !t.started && t.total.Load() > 0 {
 		t.started = true
-		t.printProgress()
+		t.printProgress(true) // Force print initial state
 	} else if t.started && !t.finalized.Load() {
-		t.printProgress()
+		t.printProgress(false)
 	}
 }
 
@@ -95,13 +97,13 @@ func (t *Tracker) Increment() {
 	// Only print if the tracker has actually started (i.e., total is known and > 0)
 	// and if we have completed items, to avoid showing Completed:0 initially.
 	if t.started {
-		t.printProgress()
+		t.printProgress(false)
 	}
 }
 
 // Refresh re-prints the current progress line.
 func (t *Tracker) Refresh() {
-	t.printProgress()
+	t.printProgress(true) // Force refresh
 }
 
 // Done marks the tracker as complete and prints final summary.
@@ -131,11 +133,17 @@ func (t *Tracker) Clear() {
 	}
 }
 
-// printProgress prints the current progress on the same line.
-func (t *Tracker) printProgress() {
+// printProgress prints the current progress on the same line with throttling.
+func (t *Tracker) printProgress(force bool) {
 	if !t.enabled || !t.started {
 		return
 	}
+
+	// Throttle to 15 updates per second
+	if !force && time.Since(t.lastUpdate) < (time.Second/15) {
+		return
+	}
+	t.lastUpdate = time.Now()
 
 	total := t.total.Load()
 	completed := t.completed.Load()

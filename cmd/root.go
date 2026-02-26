@@ -16,6 +16,7 @@ import (
 	"github.com/Abhaythakor/hyperwapp/progress"
 	"github.com/Abhaythakor/hyperwapp/util"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -230,11 +231,7 @@ func processOnlineTarget(target model.Target, timeout int) []model.Detection {
 }
 
 func isInputFromPipe() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) == 0
+	return !term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection) {
@@ -262,8 +259,8 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
 
-	offlineWorkerInputCh := make(chan model.OfflineInput)
-	resultChWorker := make(chan []model.Detection)
+	offlineWorkerInputCh := make(chan model.OfflineInput, concurrency*2) // Increase buffer
+	resultChWorker := make(chan []model.Detection, concurrency*2)
 	var wg sync.WaitGroup
 
 	numWorkers := concurrency
@@ -271,23 +268,30 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		numWorkers = 1
 	}
 
+	// 1. Start the Parser (Producer) in background
 	go func() {
 		defer close(offlineWorkerInputCh)
+		// The parser now just reads files and pushes to channel.
+		// It does NOT run detection. This is fast.
 		for offInput := range offlineInputCh {
 			offlineWorkerInputCh <- offInput
 		}
 	}()
 
+	// 2. Start the Workers (Consumers)
+	// These do the heavy CPU work (Wappalyzer regex)
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for offInput := range offlineWorkerInputCh {
+				// Handle SKIPPED items (Resume)
 				if offInput.Skipped {
 					tracker.IncrementSuccess()
 					continue
 				}
 
+				// Resume check (Double check for safety)
 				// Prefer Path for offline resume ID
 				id := offInput.Path
 				if id == "" {
@@ -302,6 +306,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 					continue
 				}
 
+				// Select Detection Strategy
 				currentInputType := model.InputTypeOffline
 				if headersOnly {
 					currentInputType = model.SourceHeadersOnly
@@ -309,17 +314,21 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 					currentInputType = model.SourceBodyOnly
 				}
 
+				// HEAVY OPERATION: The Regex Engine
 				detections, err := wappalyzerEngine.Detect(offInput.Headers, offInput.Body, currentInputType)
 				if err != nil {
-					util.Warn("Failed to detect technologies for offline input (Domain: %s, URL: %s): %v", offInput.Domain, offInput.URL, err)
+					util.Warn("Failed: %s (%v)", id, err) // Compact log
 					tracker.IncrementError()
 					continue
 				}
 
+				// Enrich Data
 				for i := range detections {
 					detections[i].Domain = offInput.Domain
 					detections[i].URL = offInput.URL
 				}
+
+				// Send results
 				resultChWorker <- detections
 				resumeMgr.MarkCompleted(id)
 				tracker.IncrementSuccess()

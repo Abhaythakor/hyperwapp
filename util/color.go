@@ -2,7 +2,8 @@ package util
 
 import (
 	"os"
-	"syscall"
+
+	"golang.org/x/term"
 )
 
 // Colorizer manages colored CLI output.
@@ -15,11 +16,7 @@ func NewColorizer(forceEnabled bool) *Colorizer {
 	enabled := forceEnabled
 	if !enabled {
 		// Detect if stdout is a TTY and not redirected
-		// For Windows, it might need specific checks, but for Unix-like, syscall.Isatty is common.
-		// For simplicity, we assume Unix-like behavior for now.
-		fd := os.Stdout.Fd()
-		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, uintptr(syscall.TIOCGWINSZ), 0)
-		enabled = errno == 0 // If it's a TTY, errno will be 0
+		enabled = term.IsTerminal(int(os.Stdout.Fd()))
 	}
 	return &Colorizer{Enabled: enabled}
 }
