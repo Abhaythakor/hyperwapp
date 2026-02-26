@@ -1,4 +1,4 @@
 package config
 
 // Version of the HyperWapp tool
-const Version = "0.0.2"
+const Version = "0.0.3"
