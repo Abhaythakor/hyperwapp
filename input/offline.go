@@ -147,7 +147,7 @@ func isTargetFile(fileName string, format OfflineFormat) bool {
 }
 
 // ParseOffline dispatches the parsing to the correct handler based on detected format.
-func ParseOffline(path string) (<-chan model.OfflineInput, error) {
+func ParseOffline(path string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
 	format := DetectOfflineFormat(path)
@@ -164,15 +164,15 @@ func ParseOffline(path string) (<-chan model.OfflineInput, error) {
 
 		switch format {
 		case FormatFFF:
-			inputSourceCh, parseErr = fff.ParseFFF(path)
+			inputSourceCh, parseErr = fff.ParseFFF(path, skipFunc)
 		case FormatKatanaDir:
-			inputSourceCh, parseErr = katana.ParseKatanaDir(path)
+			inputSourceCh, parseErr = katana.ParseKatanaDir(path, skipFunc)
 		case FormatKatanaFile:
-			inputSourceCh, parseErr = katana.ParseKatanaFile(path, "") // For single file, domain is unknown initially
+			inputSourceCh, parseErr = katana.ParseKatanaFile(path, "", skipFunc)
 		case FormatRawHTTP:
-			inputSourceCh, parseErr = raw.ParseRawHTTP(path)
+			inputSourceCh, parseErr = raw.ParseRawHTTP(path) // Skipping for Raw HTTP is handled inside if needed
 		case FormatBodyOnly:
-			inputSourceCh, parseErr = body.ParseBodyOnly(path)
+			inputSourceCh, parseErr = body.ParseBodyOnly(path, skipFunc)
 		case FormatUnknown:
 			util.Warn("Unsupported or unknown offline format for path: %s", path)
 			return // Exit goroutine

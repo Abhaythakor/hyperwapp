@@ -3,7 +3,6 @@ package fff
 import (
 	"bufio"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +13,7 @@ import (
 )
 
 // ParseFFF parses an fff directory structure and returns a channel of OfflineInput.
-func ParseFFF(root string) (<-chan model.OfflineInput, error) {
+func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
 	go func() {
@@ -36,6 +35,12 @@ func ParseFFF(root string) (<-chan model.OfflineInput, error) {
 			}
 
 			if strings.HasSuffix(path, ".headers") || strings.HasSuffix(path, ".body") {
+				// FAST RESUME: Use the .headers path as unique ID.
+				// If we encounter a header file that is finished, skip it.
+				if skipFunc != nil && strings.HasSuffix(path, ".headers") && skipFunc(path) {
+					return nil
+				}
+
 				hash := extractHash(filepath.Base(path))
 				if hash == "" {
 					return nil
@@ -77,6 +82,20 @@ func ParseFFF(root string) (<-chan model.OfflineInput, error) {
 		for domain, hashes := range filesByDomainAndHash {
 			dRoot := domainRoots[domain]
 			for _, files := range hashes {
+				// Extra check before parsing: if only body exists, check its path
+				if skipFunc != nil {
+					hPath, hasHeaders := files["headers"]
+					if hasHeaders {
+						if skipFunc(hPath) {
+							continue
+						}
+					} else if bPath, ok := files["body"]; ok {
+						if skipFunc(bPath) {
+							continue
+						}
+					}
+				}
+
 				wg.Add(1)
 				go func(f map[string]string, dr string, dom string) {
 					defer wg.Done()
@@ -93,70 +112,6 @@ func ParseFFF(root string) (<-chan model.OfflineInput, error) {
 	return outputCh, nil
 }
 
-// parseFFFDomain walks a domain's directory within an fff structure and builds OfflineInput objects,
-// sending them to a channel.
-func parseFFFDomain(path, domain string) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
-
-	// Use a wait group to ensure all goroutines finish before closing the channel
-	var wg sync.WaitGroup
-
-	// anonymous goroutine to handle walking the directory and sending inputs
-	go func() {
-		defer close(outputCh)
-
-		filesByHash := make(map[string]map[string]string) // hash -> type (headers/body) -> filepath
-
-		err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				util.Warn("Error walking fff domain directory %s: %v", p, err)
-				return err // Return the error to stop walking this subdirectory
-			}
-			if d.IsDir() {
-				return nil
-			}
-
-			if strings.HasSuffix(p, ".headers") || strings.HasSuffix(p, ".body") {
-				hash := extractHash(filepath.Base(p))
-				if hash == "" {
-					return nil // Skip files without a recognizable hash
-				}
-
-				if _, ok := filesByHash[hash]; !ok {
-					filesByHash[hash] = make(map[string]string)
-				}
-				if strings.HasSuffix(p, ".headers") {
-					filesByHash[hash]["headers"] = p
-				}
-				if strings.HasSuffix(p, ".body") {
-					filesByHash[hash]["body"] = p
-				}
-			}
-			return nil
-		})
-
-		if err != nil {
-			util.Warn("Failed to walk fff domain directory %s: %v", path, err)
-			return // Exit goroutine
-		}
-
-		// Now process the grouped files and send to outputCh
-		for _, files := range filesByHash {
-			wg.Add(1)
-			go func(files map[string]string) {
-				defer wg.Done()
-				inputs := buildFFFInputsFromGroup(files, path, domain)
-				for _, input := range inputs {
-					outputCh <- input
-				}
-			}(files)
-		}
-		wg.Wait()
-	}()
-
-	return outputCh, nil
-}
-
 // buildFFFInputsFromGroup constructs OfflineInput objects from a single grouped fff files map.
 func buildFFFInputsFromGroup(files map[string]string, root, domain string) []model.OfflineInput {
 	var inputs []model.OfflineInput
@@ -164,8 +119,10 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 	headers := make(map[string][]string)
 	var body []byte
 	var fileURLPath string // To derive the URL correctly
+	var sourcePath string
 
 	if hPath, ok := files["headers"]; ok {
+		sourcePath = hPath
 		parsedHeaders, err := parseHeadersFile(hPath)
 		if err != nil {
 			util.Warn("Error parsing fff headers file %s: %v", hPath, err)
@@ -175,6 +132,9 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 		fileURLPath = hPath
 	}
 	if bPath, ok := files["body"]; ok {
+		if sourcePath == "" {
+			sourcePath = bPath
+		}
 		b, err := os.ReadFile(bPath)
 		if err != nil {
 			util.Warn("Error reading fff body file %s: %v", bPath, err)
@@ -193,6 +153,7 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 		URL:     url,
 		Headers: headers,
 		Body:    body,
+		Path:    sourcePath,
 	})
 	util.Debug("Created FFF OfflineInput for URL: %s (Domain: %s)", url, domain)
 	return inputs

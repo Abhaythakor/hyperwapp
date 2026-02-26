@@ -12,7 +12,7 @@ func TestParseKatanaFile(t *testing.T) {
 	testFilePath := "../../testdata/katana/single-file/example.com_request.txt"
 	fallbackDomain := "test.com"
 
-	inputsCh, err := katana.ParseKatanaFile(testFilePath, fallbackDomain)
+	inputsCh, err := katana.ParseKatanaFile(testFilePath, fallbackDomain, nil)
 	if err != nil {
 		t.Fatalf("ParseKatanaFile failed: %v", err)
 	}

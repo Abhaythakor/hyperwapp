@@ -11,7 +11,7 @@ import (
 func TestParseFFFBasic(t *testing.T) {
 	testRoot := "../../testdata/fff/simple"
 
-	inputsCh, err := fff.ParseFFF(testRoot)
+	inputsCh, err := fff.ParseFFF(testRoot, nil)
 	if err != nil {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestParseFFFBasic(t *testing.T) {
 
 func TestParseFFFHeadersOnly(t *testing.T) {
 	testRoot := "../../testdata/fff/headers-only"
-	inputsCh, err := fff.ParseFFF(testRoot)
+	inputsCh, err := fff.ParseFFF(testRoot, nil)
 	if err != nil {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestParseFFFHeadersOnly(t *testing.T) {
 
 func TestParseFFFBodyOnly(t *testing.T) {
 	testRoot := "../../testdata/fff/body-only"
-	inputsCh, err := fff.ParseFFF(testRoot)
+	inputsCh, err := fff.ParseFFF(testRoot, nil)
 	if err != nil {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestParseFFFBodyOnly(t *testing.T) {
 
 func TestParseFFFMultiDomain(t *testing.T) {
 	testRoot := "../../testdata/fff/multi-domain"
-	inputsCh, err := fff.ParseFFF(testRoot)
+	inputsCh, err := fff.ParseFFF(testRoot, nil)
 	if err != nil {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}

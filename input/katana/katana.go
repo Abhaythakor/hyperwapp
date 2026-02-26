@@ -24,7 +24,7 @@ func IsKatanaFileContent(data []byte) bool {
 }
 
 // ParseKatanaDir parses a katana output directory and returns a channel of OfflineInput.
-func ParseKatanaDir(root string) (<-chan model.OfflineInput, error) {
+func ParseKatanaDir(root string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
 	go func() {
@@ -44,6 +44,11 @@ func ParseKatanaDir(root string) (<-chan model.OfflineInput, error) {
 			fileName := d.Name()
 			// Match .txt or files containing .txt (like .txt.~1~)
 			if strings.Contains(fileName, ".txt") {
+				// FAST RESUME: Skip file before reading if skipFunc says so
+				if skipFunc != nil && skipFunc(path) {
+					return nil
+				}
+
 				// Infer domain from the immediate parent directory name
 				parentDir := filepath.Base(filepath.Dir(path))
 				domain := parentDir
@@ -51,7 +56,7 @@ func ParseKatanaDir(root string) (<-chan model.OfflineInput, error) {
 					domain = "" // Let the parser try to extract it from headers
 				}
 
-				inputCh, err := ParseKatanaFile(path, domain)
+				inputCh, err := ParseKatanaFile(path, domain, skipFunc)
 				if err != nil {
 					util.Warn("Error parsing katana file %s: %v", path, err)
 					return nil
@@ -72,8 +77,14 @@ func ParseKatanaDir(root string) (<-chan model.OfflineInput, error) {
 }
 
 // ParseKatanaFile parses a single katana response file and returns a channel of OfflineInput.
-func ParseKatanaFile(path, fallbackDomain string) (<-chan model.OfflineInput, error) {
+func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput, 1) // Buffered channel for a single input
+
+	// Fast check for single file
+	if skipFunc != nil && skipFunc(path) {
+		close(outputCh)
+		return outputCh, nil
+	}
 
 	go func() {
 		defer close(outputCh)
@@ -103,6 +114,7 @@ func ParseKatanaFile(path, fallbackDomain string) (<-chan model.OfflineInput, er
 			URL:     url,
 			Headers: responseHeaders,
 			Body:    body,
+			Path:    path, // Track source path
 		}
 	}()
 

@@ -249,7 +249,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 	tracker.AddTotal(total)
 	tracker.FinalizeTotal()
 
-	offlineInputCh, err := input.ParseOffline(absInputSource)
+	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted)
 	if err != nil {
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
@@ -275,7 +275,11 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		go func() {
 			defer wg.Done()
 			for offInput := range offlineWorkerInputCh {
-				id := offInput.URL
+				// Prefer Path for offline resume ID
+				id := offInput.Path
+				if id == "" {
+					id = offInput.URL
+				}
 				if id == "" {
 					id = offInput.Domain
 				}

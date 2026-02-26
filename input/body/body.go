@@ -10,7 +10,7 @@ import (
 )
 
 // ParseBodyOnly parses a file or directory as raw body input.
-func ParseBodyOnly(path string) (<-chan model.OfflineInput, error) {
+func ParseBodyOnly(path string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
 	go func() {
@@ -29,11 +29,19 @@ func ParseBodyOnly(path string) (<-chan model.OfflineInput, error) {
 					return nil
 				}
 				if !d.IsDir() {
+					// FAST RESUME check
+					if skipFunc != nil && skipFunc(p) {
+						return nil
+					}
 					processSingleFile(p, outputCh)
 				}
 				return nil
 			})
 		} else {
+			// Single file check
+			if skipFunc != nil && skipFunc(path) {
+				return
+			}
 			processSingleFile(path, outputCh)
 		}
 	}()
@@ -57,6 +65,7 @@ func processSingleFile(path string, outputCh chan<- model.OfflineInput) {
 		URL:     "",
 		Headers: make(map[string][]string),
 		Body:    body,
+		Path:    path, // Set source path
 	}
 	util.Debug("Created Body-Only OfflineInput for file: %s (Domain: %s)", path, input.Domain)
 	outputCh <- input

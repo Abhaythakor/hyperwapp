@@ -23,6 +23,7 @@ type OfflineInput struct {
 	URL     string
 	Headers map[string][]string
 	Body    []byte
+	Path    string // Added: Source file path for fast resume
 }
 
 // Validate performs schema validation on an OfflineInput struct.
