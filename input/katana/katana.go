@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync" // Added sync
 
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/util" // Added import for util package
@@ -24,11 +25,43 @@ func IsKatanaFileContent(data []byte) bool {
 }
 
 // ParseKatanaDir parses a katana output directory and returns a channel of OfflineInput.
-func ParseKatanaDir(root string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
+func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
+
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 
 	go func() {
 		defer close(outputCh)
+
+		fileQueue := make(chan string, 1000)
+		var wg sync.WaitGroup
+
+		// Start workers for parallel parsing
+		for i := 0; i < concurrency; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for path := range fileQueue {
+					// Infer domain from the immediate parent directory name
+					parentDir := filepath.Base(filepath.Dir(path))
+					domain := parentDir
+					if domain == "." || domain == "responses" || domain == "katana-output" {
+						domain = ""
+					}
+
+					inputCh, err := ParseKatanaFile(path, domain, skipFunc)
+					if err != nil {
+						util.Warn("Error parsing katana file %s: %v", path, err)
+						continue
+					}
+					for input := range inputCh {
+						outputCh <- input
+					}
+				}
+			}()
+		}
 
 		util.Debug("Walking Katana directory recursively: %s", root)
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -42,31 +75,14 @@ func ParseKatanaDir(root string, skipFunc func(string) bool) (<-chan model.Offli
 			}
 
 			fileName := d.Name()
-			// Match .txt or files containing .txt (like .txt.~1~)
 			if strings.Contains(fileName, ".txt") {
-				// FAST RESUME: Skip file before reading if skipFunc says so
-				if skipFunc != nil && skipFunc(path) {
-					return nil
-				}
-
-				// Infer domain from the immediate parent directory name
-				parentDir := filepath.Base(filepath.Dir(path))
-				domain := parentDir
-				if domain == "." || domain == "responses" || domain == "katana-output" {
-					domain = "" // Let the parser try to extract it from headers
-				}
-
-				inputCh, err := ParseKatanaFile(path, domain, skipFunc)
-				if err != nil {
-					util.Warn("Error parsing katana file %s: %v", path, err)
-					return nil
-				}
-				for input := range inputCh {
-					outputCh <- input
-				}
+				fileQueue <- path
 			}
 			return nil
 		})
+
+		close(fileQueue)
+		wg.Wait()
 
 		if err != nil {
 			util.Warn("Failed to complete recursive walk of Katana directory %s: %v", root, err)
@@ -78,10 +94,11 @@ func ParseKatanaDir(root string, skipFunc func(string) bool) (<-chan model.Offli
 
 // ParseKatanaFile parses a single katana response file and returns a channel of OfflineInput.
 func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput, 1) // Buffered channel for a single input
+	outputCh := make(chan model.OfflineInput, 1)
 
 	// Fast check for single file
 	if skipFunc != nil && skipFunc(path) {
+		outputCh <- model.OfflineInput{Path: path, Skipped: true}
 		close(outputCh)
 		return outputCh, nil
 	}

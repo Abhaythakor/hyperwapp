@@ -19,92 +19,79 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 	go func() {
 		defer close(outputCh)
 
-		// Grouping: Domain -> Hash -> map[type]path
-		filesByDomainAndHash := make(map[string]map[string]map[string]string)
-		// We also need to keep track of the "domain root" (where the domain starts) for URL derivation
-		domainRoots := make(map[string]string)
-
-		util.Debug("Walking FFF directory recursively: %s", root)
-		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				util.Warn("Error walking FFF directory at %s: %v", path, err)
-				return nil
-			}
-			if d.IsDir() {
-				return nil
-			}
-
-			if strings.HasSuffix(path, ".headers") || strings.HasSuffix(path, ".body") {
-				// FAST RESUME: Use the .headers path as unique ID.
-				// If we encounter a header file that is finished, skip it.
-				if skipFunc != nil && strings.HasSuffix(path, ".headers") && skipFunc(path) {
-					return nil
-				}
-
-				hash := extractHash(filepath.Base(path))
-				if hash == "" {
-					return nil
-				}
-
-				// Determine domain: The first directory under 'root' is our best guess for domain
-				rel, _ := filepath.Rel(root, path)
-				parts := strings.Split(filepath.ToSlash(rel), "/")
-				if len(parts) < 2 {
-					return nil // Should be root/domain/file or deeper
-				}
-				domain := parts[0]
-				domainRoot := filepath.Join(root, domain)
-
-				if _, ok := filesByDomainAndHash[domain]; !ok {
-					filesByDomainAndHash[domain] = make(map[string]map[string]string)
-					domainRoots[domain] = domainRoot
-				}
-				if _, ok := filesByDomainAndHash[domain][hash]; !ok {
-					filesByDomainAndHash[domain][hash] = make(map[string]string)
-				}
-
-				if strings.HasSuffix(path, ".headers") {
-					filesByDomainAndHash[domain][hash]["headers"] = path
-				} else {
-					filesByDomainAndHash[domain][hash]["body"] = path
-				}
-			}
-			return nil
-		})
-
+		util.Debug("Walking FFF directory: %s", root)
+		
+		// List top-level domain directories
+		entries, err := os.ReadDir(root)
 		if err != nil {
-			util.Warn("Failed to walk FFF directory %s: %v", root, err)
+			util.Warn("Failed to read FFF root: %v", err)
 			return
 		}
 
-		// Now process all grouped files
 		var wg sync.WaitGroup
-		for domain, hashes := range filesByDomainAndHash {
-			dRoot := domainRoots[domain]
-			for _, files := range hashes {
-				// Extra check before parsing: if only body exists, check its path
-				if skipFunc != nil {
-					hPath, hasHeaders := files["headers"]
-					if hasHeaders {
-						if skipFunc(hPath) {
-							continue
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			
+			domain := entry.Name()
+			domainPath := filepath.Join(root, domain)
+
+			wg.Add(1)
+			go func(dPath, dom string) {
+				defer wg.Done()
+				
+				// Map to group hash -> {headers, body} within THIS domain only
+				filesByHash := make(map[string]map[string]string)
+				
+				_ = filepath.WalkDir(dPath, func(path string, d os.DirEntry, err error) error {
+					if err != nil || d.IsDir() {
+						return nil
+					}
+
+					if strings.HasSuffix(path, ".headers") || strings.HasSuffix(path, ".body") {
+						hash := extractHash(filepath.Base(path))
+						if hash == "" {
+							return nil
 						}
-					} else if bPath, ok := files["body"]; ok {
-						if skipFunc(bPath) {
-							continue
+
+						if _, ok := filesByHash[hash]; !ok {
+							filesByHash[hash] = make(map[string]string)
+						}
+
+						if strings.HasSuffix(path, ".headers") {
+							filesByHash[hash]["headers"] = path
+						} else {
+							filesByHash[hash]["body"] = path
 						}
 					}
-				}
+					return nil
+				})
 
-				wg.Add(1)
-				go func(f map[string]string, dr string, dom string) {
-					defer wg.Done()
-					inputs := buildFFFInputsFromGroup(f, dr, dom)
+				// Once this domain is walked, stream its results immediately
+				for _, files := range filesByHash {
+					// RESUME CHECK
+					if skipFunc != nil {
+						hPath, hasHeaders := files["headers"]
+						if hasHeaders {
+							if skipFunc(hPath) {
+								outputCh <- model.OfflineInput{Path: hPath, Skipped: true}
+								continue
+							}
+						} else if bPath, ok := files["body"]; ok {
+							if skipFunc(bPath) {
+								outputCh <- model.OfflineInput{Path: bPath, Skipped: true}
+								continue
+							}
+						}
+					}
+
+					inputs := buildFFFInputsFromGroup(files, dPath, dom)
 					for _, input := range inputs {
 						outputCh <- input
 					}
-				}(files, dRoot, domain)
-			}
+				}
+			}(domainPath, domain)
 		}
 		wg.Wait()
 	}()

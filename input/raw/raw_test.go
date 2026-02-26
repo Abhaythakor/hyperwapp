@@ -11,7 +11,7 @@ import (
 func TestParseRawHTTPSingleResponse(t *testing.T) {
 	testFilePath := "../../testdata/raw-http/single-response.txt"
 
-	inputsCh, err := raw.ParseRawHTTP(testFilePath)
+	inputsCh, err := raw.ParseRawHTTP(testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseRawHTTP failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestParseRawHTTPSingleResponse(t *testing.T) {
 func TestParseRawHTTPMultipleResponses(t *testing.T) {
 	testFilePath := "../../testdata/raw-http/multiple-responses.txt"
 
-	inputsCh, err := raw.ParseRawHTTP(testFilePath)
+	inputsCh, err := raw.ParseRawHTTP(testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseRawHTTP failed: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestParseRawHTTPMultipleResponses(t *testing.T) {
 func TestParseRawHTTPMalformed(t *testing.T) {
 	testFilePath := "../../testdata/raw-http/malformed.txt"
 
-	inputsCh, err := raw.ParseRawHTTP(testFilePath)
+	inputsCh, err := raw.ParseRawHTTP(testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseRawHTTP should not return an error for malformed content, got: %v", err)
 	}

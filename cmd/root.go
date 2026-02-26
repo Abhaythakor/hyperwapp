@@ -146,13 +146,18 @@ ADDITIONAL INFO:
 			util.Fatal("Flags -all and -domain are mutually exclusive.")
 		}
 
+		var (
+			tracker  *progress.Tracker
+			resultCh <-chan []model.Detection
+		)
+
 		if offline {
 			inputModeVal = "offline"
-			tracker, resultCh := runOffline(inputSource)
+			tracker, resultCh = runOffline(inputSource)
 			handleResults(resultCh, tracker, inputModeVal)
 		} else {
 			inputModeVal = "online"
-			tracker, resultCh := runOnline(inputSource)
+			tracker, resultCh = runOnline(inputSource)
 			handleResults(resultCh, tracker, inputModeVal)
 		}
 	},
@@ -181,6 +186,9 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 	}
 
 	for detections := range resultCh {
+		if detections == nil {
+			continue
+		}
 		tracker.Clear()
 		if err := cliWriter.Write(detections); err != nil {
 			util.Warn("Error writing to CLI: %v", err)
@@ -249,7 +257,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 	tracker.AddTotal(total)
 	tracker.FinalizeTotal()
 
-	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted)
+	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted, concurrency)
 	if err != nil {
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
@@ -275,6 +283,11 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		go func() {
 			defer wg.Done()
 			for offInput := range offlineWorkerInputCh {
+				if offInput.Skipped {
+					tracker.IncrementSuccess()
+					continue
+				}
+
 				// Prefer Path for offline resume ID
 				id := offInput.Path
 				if id == "" {

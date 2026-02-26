@@ -23,7 +23,8 @@ type OfflineInput struct {
 	URL     string
 	Headers map[string][]string
 	Body    []byte
-	Path    string // Added: Source file path for fast resume
+	Path    string // Source file path for fast resume
+	Skipped bool   // True if this item was already processed (resume mode)
 }
 
 // Validate performs schema validation on an OfflineInput struct.

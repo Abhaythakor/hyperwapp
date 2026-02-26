@@ -4,14 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync" // Added sync
 
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 // ParseBodyOnly parses a file or directory as raw body input.
-func ParseBodyOnly(path string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
+func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
+
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 
 	go func() {
 		defer close(outputCh)
@@ -23,6 +28,19 @@ func ParseBodyOnly(path string, skipFunc func(string) bool) (<-chan model.Offlin
 		}
 
 		if fileInfo.IsDir() {
+			fileQueue := make(chan string, 1000)
+			var wg sync.WaitGroup
+
+			for i := 0; i < concurrency; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for p := range fileQueue {
+						processSingleFile(p, outputCh)
+					}
+				}()
+			}
+
 			err = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
 				if err != nil {
 					util.Warn("Error walking directory %s: %v", p, err)
@@ -31,15 +49,19 @@ func ParseBodyOnly(path string, skipFunc func(string) bool) (<-chan model.Offlin
 				if !d.IsDir() {
 					// FAST RESUME check
 					if skipFunc != nil && skipFunc(p) {
+						outputCh <- model.OfflineInput{Path: p, Skipped: true}
 						return nil
 					}
-					processSingleFile(p, outputCh)
+					fileQueue <- p
 				}
 				return nil
 			})
+			close(fileQueue)
+			wg.Wait()
 		} else {
 			// Single file check
 			if skipFunc != nil && skipFunc(path) {
+				outputCh <- model.OfflineInput{Path: path, Skipped: true}
 				return
 			}
 			processSingleFile(path, outputCh)

@@ -3,7 +3,8 @@ package raw
 import (
 	"bufio"
 	"bytes"
-	"io" // Added import
+	"fmt" // Added fmt
+	"io"
 	"os"
 	"strings"
 
@@ -44,7 +45,7 @@ func IsRawHTTPContent(data []byte) bool {
 }
 
 // ParseRawHTTP parses a file containing one or more raw HTTP responses.
-func ParseRawHTTP(path string) (<-chan model.OfflineInput, error) {
+func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
 	go func() {
@@ -53,24 +54,36 @@ func ParseRawHTTP(path string) (<-chan model.OfflineInput, error) {
 		file, err := os.Open(path)
 		if err != nil {
 			util.Warn("Failed to open raw http file %s: %v", path, err)
-			return // Exit goroutine
+			return
 		}
 		defer file.Close()
 
-		rawResponseCh := splitHTTPResponses(file) // Now returns a channel of rawHTTPResponse
+		rawResponseCh := splitHTTPResponses(file)
 
+		index := 0
 		for rawResp := range rawResponseCh {
-			headers := parseRawHeaders(bytes.NewReader(rawResp.Headers)) // Pass io.Reader
+			index++
+			// For Raw HTTP, we create a unique ID using path + index 
+			// since one file can have many responses.
+			uniquePath := fmt.Sprintf("%s#%d", path, index)
+
+			if skipFunc != nil && skipFunc(uniquePath) {
+				outputCh <- model.OfflineInput{Path: uniquePath, Skipped: true}
+				continue
+			}
+
+			headers := parseRawHeaders(bytes.NewReader(rawResp.Headers))
 			body := rawResp.Body
-			domain := http.ExtractHost(headers, "unknown") // Try to infer domain from Host header
+			domain := http.ExtractHost(headers, "unknown")
 
 			outputCh <- model.OfflineInput{
 				Domain:  domain,
-				URL:     "", // URL cannot be reliably determined from raw response dump
+				URL:     "",
 				Headers: headers,
 				Body:    body,
+				Path:    uniquePath,
 			}
-			util.Debug("Created Raw HTTP OfflineInput for Domain: %s (URL unknown)", domain)
+			util.Debug("Created Raw HTTP OfflineInput for Domain: %s (ID: %s)", domain, uniquePath)
 		}
 	}()
 

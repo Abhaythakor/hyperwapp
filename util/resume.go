@@ -9,20 +9,19 @@ import (
 
 // ResumeManager handles tracking completed targets for resuming scans.
 type ResumeManager struct {
-	mu         sync.RWMutex
 	file       *os.File
-	completed  map[string]struct{}
+	completed  sync.Map // Optimized for concurrent read/write
 	filePath   string
 	enabled    bool
-	TotalCount uint32 // Loaded total from previous run
+	TotalCount uint32     // Loaded total from previous run
+	mu         sync.Mutex // Used only for writing to the file
 }
 
 // NewResumeManager initializes the manager and loads existing progress if resume is enabled.
 func NewResumeManager(path string, enabled bool) (*ResumeManager, error) {
 	rm := &ResumeManager{
-		completed: make(map[string]struct{}),
-		filePath:  path,
-		enabled:   enabled,
+		filePath: path,
+		enabled:  enabled,
 	}
 
 	if !enabled {
@@ -49,7 +48,7 @@ func NewResumeManager(path string, enabled bool) (*ResumeManager, error) {
 					continue
 				}
 			}
-			rm.completed[text] = struct{}{}
+			rm.completed.Store(text, struct{}{})
 		}
 		file.Close()
 	}
@@ -82,9 +81,7 @@ func (rm *ResumeManager) IsCompleted(id string) bool {
 	if !rm.enabled {
 		return false
 	}
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
-	_, ok := rm.completed[id]
+	_, ok := rm.completed.Load(id)
 	return ok
 }
 
@@ -93,10 +90,11 @@ func (rm *ResumeManager) MarkCompleted(id string) {
 	if !rm.enabled || rm.file == nil {
 		return
 	}
+
+	rm.completed.Store(id, struct{}{})
+
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-
-	rm.completed[id] = struct{}{}
 	_, _ = rm.file.WriteString(id + "\n")
 }
 
