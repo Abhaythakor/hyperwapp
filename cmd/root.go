@@ -112,14 +112,29 @@ ADDITIONAL INFO:
 				util.Warn("Failed to update fingerprints: %v", err)
 			}
 
-			// Update Binary
-			util.Info("Updating HyperWapp binary...")
+			// Update Binary via Go Install
+			util.Info("Updating HyperWapp binary via go install...")
 			cmd := exec.Command("go", "install", "github.com/Abhaythakor/hyperwapp@latest")
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
 				util.Fatal("Failed to update HyperWapp: %v", err)
 			}
+
+			// Local Rebuild Logic: Check if we are running from a local development folder
+			exePath, err := os.Executable()
+			if err == nil {
+				cwd, _ := os.Getwd()
+				// If the binary is in the current directory, rebuild it locally too
+				if filepath.Dir(exePath) == cwd {
+					util.Info("Local binary detected. Rebuilding ./hyperwapp...")
+					buildCmd := exec.Command("go", "build", "-o", filepath.Base(exePath), "main.go")
+					if err := buildCmd.Run(); err == nil {
+						util.Info("Local binary updated successfully!")
+					}
+				}
+			}
+
 			util.Info("HyperWapp updated successfully!")
 			os.Exit(0)
 		}
