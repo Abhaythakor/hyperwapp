@@ -1,6 +1,7 @@
 package input
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/Abhaythakor/hyperwapp/util"
 
 	"github.com/Abhaythakor/hyperwapp/input/body"
+	"github.com/Abhaythakor/hyperwapp/input/custom"
 	"github.com/Abhaythakor/hyperwapp/input/fff"
 	"github.com/Abhaythakor/hyperwapp/input/katana"
 	"github.com/Abhaythakor/hyperwapp/input/raw"
@@ -33,10 +35,15 @@ const (
 	FormatRawHTTP OfflineFormat = "raw-http"
 	// FormatBodyOnly indicates a file treated as a raw response body.
 	FormatBodyOnly OfflineFormat = "body-only"
+	// FormatCustom indicates an input parsed with a YAML config (json or regex).
+	FormatCustom OfflineFormat = "custom"
 )
 
 // DetectOfflineFormat identifies the format of the given path (file or directory).
-func DetectOfflineFormat(path string) OfflineFormat {
+func DetectOfflineFormat(path string, hasCustomConfig bool) OfflineFormat {
+	if hasCustomConfig {
+		return FormatCustom
+	}
 	util.Debug("DetectOfflineFormat: Checking path: %s", path)
 	fileInfo, err := os.Stat(path)
 	if err != nil {
@@ -53,6 +60,25 @@ func DetectOfflineFormat(path string) OfflineFormat {
 			util.Debug("Detected Katana Directory: %s", path)
 			return FormatKatanaDir
 		}
+
+		// Check if it's a directory of JSON files
+		isJSONDir := false
+		_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && (strings.HasSuffix(strings.ToLower(d.Name()), ".json") || strings.HasSuffix(strings.ToLower(d.Name()), ".jsonl")) {
+				isJSONDir = true
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if isJSONDir {
+			util.Debug("Detected JSON Directory: %s", path)
+			return FormatCustom
+		}
+
+		// Fallback to Body Only
 		util.Debug("Directory %s is not FFF or Katana directory. Falling back to Body Only.", path)
 		return FormatBodyOnly
 	} else { // It's a file
@@ -76,15 +102,22 @@ func DetectOfflineFormat(path string) OfflineFormat {
 			util.Debug("Detected Raw HTTP File: %s", path)
 			return FormatRawHTTP
 		}
+
+		// JSON/JSONL auto-detection
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".json" || ext == ".jsonl" || (len(data) > 0 && (data[0] == '{' || data[0] == '[')) {
+			util.Debug("Detected JSON File: %s", path)
+			return FormatCustom
+		}
+
 		util.Debug("Detected Body Only File: %s", path)
 		return FormatBodyOnly
 	}
 }
 
 // CountOffline performing a fast pass to count total targets without parsing.
-// It uses concurrency to speed up discovery in large directory structures.
-func CountOffline(path string, concurrency int) (uint32, error) {
-	format := DetectOfflineFormat(path)
+func CountOffline(path string, concurrency int, hasCustomConfig bool) (uint32, error) {
+	format := DetectOfflineFormat(path, hasCustomConfig)
 	var count atomic.Uint32
 
 	fileInfo, err := os.Stat(path)
@@ -93,6 +126,11 @@ func CountOffline(path string, concurrency int) (uint32, error) {
 	}
 
 	if !fileInfo.IsDir() {
+		if format == FormatCustom {
+			// For custom formats, we must count records/lines.
+			// This is tricky if it's regex blocks, but for now we'll assume line-based or a simple estimate.
+			return countLines(path)
+		}
 		return 1, nil
 	}
 
@@ -125,14 +163,24 @@ func CountOffline(path string, concurrency int) (uint32, error) {
 
 				_ = filepath.WalkDir(p, func(p2 string, d os.DirEntry, err error) error {
 					if err == nil && !d.IsDir() && isTargetFile(d.Name(), format) {
-						count.Add(1)
+						if format == FormatCustom {
+							lc, _ := countLines(p2)
+							count.Add(lc)
+						} else {
+							count.Add(1)
+						}
 					}
 					return nil
 				})
 			}(fullPath)
 		} else {
 			if isTargetFile(entry.Name(), format) {
-				count.Add(1)
+				if format == FormatCustom {
+					lc, _ := countLines(fullPath)
+					count.Add(lc)
+				} else {
+					count.Add(1)
+				}
 			}
 		}
 	}
@@ -141,23 +189,40 @@ func CountOffline(path string, concurrency int) (uint32, error) {
 	return count.Load(), nil
 }
 
+func countLines(path string) (uint32, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	var count uint32
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		count++
+	}
+	return count, scanner.Err()
+}
+
 func isTargetFile(fileName string, format OfflineFormat) bool {
 	switch format {
 	case FormatFFF:
 		return strings.HasSuffix(fileName, ".headers")
 	case FormatKatanaDir, FormatKatanaFile:
 		return strings.Contains(fileName, ".txt")
+	case FormatCustom:
+		return true // Configured to handle any file
 	default:
 		return true
 	}
 }
 
 // ParseOffline dispatches the parsing to the correct handler based on detected format.
-func ParseOffline(path string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
+func ParseOffline(path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan model.OfflineInput, error) {
 	outputCh := make(chan model.OfflineInput)
 
-	format := DetectOfflineFormat(path)
-	if format == FormatUnknown { // If DetectOfflineFormat returns FormatUnknown, it means stat failed or it's genuinely unknown
+	format := DetectOfflineFormat(path, customCfg != nil)
+	if format == FormatUnknown {
 		return nil, fmt.Errorf("invalid offline input path or unknown format: %s", path)
 	}
 	util.Debug("Detected offline format: %s for %s", format, path)
@@ -169,6 +234,8 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int) (<-c
 		var parseErr error
 
 		switch format {
+		case FormatCustom:
+			inputSourceCh, parseErr = custom.ParseCustom(path, customCfg, skipFunc, concurrency)
 		case FormatFFF:
 			inputSourceCh, parseErr = fff.ParseFFF(path, skipFunc)
 		case FormatKatanaDir:
@@ -188,12 +255,9 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int) (<-c
 			inputSourceCh, parseErr = raw.ParseRawHTTP(path, skipFunc, concurrency)
 		case FormatBodyOnly:
 			inputSourceCh, parseErr = body.ParseBodyOnly(path, skipFunc, concurrency)
-		case FormatUnknown:
-			util.Warn("Unsupported or unknown offline format for path: %s", path)
-			return // Exit goroutine
 		default:
-			util.Warn("Unhandled offline format: %s for path: %s", format, path)
-			return // Exit goroutine
+			util.Warn("Unsupported offline format: %s", format)
+			return
 		}
 
 		if parseErr != nil {

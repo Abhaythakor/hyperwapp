@@ -10,6 +10,7 @@ import (
 	"github.com/Abhaythakor/hyperwapp/config"
 	"github.com/Abhaythakor/hyperwapp/detect"
 	"github.com/Abhaythakor/hyperwapp/input"
+	"github.com/Abhaythakor/hyperwapp/input/custom"
 	"github.com/Abhaythakor/hyperwapp/input/online"
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/output"
@@ -26,12 +27,13 @@ var (
 	auto         bool
 	all          bool
 	domain       bool
-	outputFile   string
-	outputFormat string
-	url          string
-	urlList      string
-	concurrency  int
-	cpus         int
+	outputFile     string
+	outputFormat   string
+	url             string
+	urlList         string
+	inputConfigPath string // Renamed for universal custom parsing
+	concurrency     int
+	cpus           int
 	timeout      int
 	forceColor   bool
 	disableColor bool
@@ -240,12 +242,21 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		util.Fatal("Error resolving absolute path for input: %v", err)
 	}
 
+	// Load custom input config if provided
+	var customCfg *custom.CompiledConfig
+	if inputConfigPath != "" {
+		customCfg, err = custom.LoadConfig(inputConfigPath)
+		if err != nil {
+			util.Fatal("Error loading input config: %v", err)
+		}
+	}
+
 	tracker := progress.NewTracker(0, silent, !disableColor)
 	var total uint32
 	if resume && resumeMgr.TotalCount > 0 {
 		total = resumeMgr.TotalCount
 	} else {
-		total, err = input.CountOffline(absInputSource, concurrency)
+		total, err = input.CountOffline(absInputSource, concurrency, customCfg != nil)
 		if err != nil {
 			util.Fatal("Error during discovery phase: %v", err)
 		}
@@ -254,7 +265,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 	tracker.AddTotal(total)
 	tracker.FinalizeTotal()
 
-	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted, concurrency)
+	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted, concurrency, customCfg)
 	if err != nil {
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
@@ -424,6 +435,7 @@ func init() {
 	// Input Group
 	rootCmd.PersistentFlags().StringVarP(&url, "url", "u", "", "Single URL to scan")
 	rootCmd.PersistentFlags().StringVarP(&urlList, "list", "l", "", "File containing list of URLs to scan")
+	rootCmd.PersistentFlags().StringVar(&inputConfigPath, "input-config", "", "YAML file defining custom input parsing (JSON or Regex support)")
 	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "Offline mode: recursively parse directory structure (Katana, FFF, etc.)")
 
 	// Detection Strategy Group

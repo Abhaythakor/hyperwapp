@@ -1,0 +1,17 @@
+# HyperWapp Custom JSON Input Configuration
+# Use GJSON paths to extract fields. (https://github.com/tidwall/gjson)
+
+# Example for test.jsonl
+url_path: "request.endpoint"
+headers_path: "response.headers"
+body_path: "response.body"
+
+# Example for test2.jsonl
+# url_path: "url"
+# headers_path: "headers"
+# body_path: "body"
+
+# Optional: Use regex to extract if the field is a raw string
+# url_regex: "https?://[^\s]+"
+# domain_regex: "Host: ([^\s
+]+)"

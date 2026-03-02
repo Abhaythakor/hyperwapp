@@ -100,6 +100,18 @@ func TestDetectOfflineFormat(t *testing.T) {
 			expectedFormat: input.FormatBodyOnly,
 		},
 		{
+			name:           "JSON File",
+			setupFunc:      func(t *testing.T, path string) { createDummyFile(t, filepath.Join(path, "test.json"), `{"url": "test"}`) },
+			path:           filepath.Join(tmpDir, "json_test_file", "test.json"),
+			expectedFormat: input.FormatCustom, // Auto-detected or forced via config
+		},
+		{
+			name:           "JSONL File",
+			setupFunc:      func(t *testing.T, path string) { createDummyFile(t, filepath.Join(path, "test.jsonl"), `{"url": "test"}`) },
+			path:           filepath.Join(tmpDir, "jsonl_test_file", "test.jsonl"),
+			expectedFormat: input.FormatCustom,
+		},
+		{
 			name:           "Non-existent Path",
 			setupFunc:      func(t *testing.T, path string) {}, // No setup, path won't exist
 			path:           filepath.Join(tmpDir, "non_existent"),
@@ -115,7 +127,7 @@ func TestDetectOfflineFormat(t *testing.T) {
 			}
 			tt.setupFunc(t, testBasePath)
 
-			format := input.DetectOfflineFormat(tt.path)
+			format := input.DetectOfflineFormat(tt.path, false)
 			if format != tt.expectedFormat {
 				t.Errorf("DetectOfflineFormat(%s) = %s; want %s", tt.path, format, tt.expectedFormat)
 			}

@@ -1,0 +1,21 @@
+# HyperWapp Custom Regex Input Configuration
+format: "regex"
+
+# Regex to split file into records (e.g. triple dash separator)
+record_separator: "
+---
+"
+
+regex:
+  # Extract URL: looks for "Target: " followed by the URL
+  url_regex: "Target: (https?://[^\s
+]+)"
+  
+  # Extract Header block: looks for text between [HEADERS] and [BODY]
+  headers_regex: "(?s)\[HEADERS\]
+(.*?)
+\[BODY\]"
+  
+  # Extract Body: everything after [BODY]
+  body_regex: "(?s)\[BODY\]
+(.*)"

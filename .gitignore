@@ -7,6 +7,7 @@
 
 # Test binary, built with `go test -c`
 *.test
+testJsonInputs/
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
@@ -25,6 +26,8 @@ results.*
 !README.md
 !docs/*.md
 !plan/*.md
+
+
 
 # OS specific files
 .DS_Store
