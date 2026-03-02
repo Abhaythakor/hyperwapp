@@ -44,49 +44,76 @@ func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, co
 }
 
 func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
-		util.Warn("Failed to read file %s: %v", path, err)
+		util.Warn("Failed to open file %s: %v", path, err)
 		return
 	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	// Support up to 10MB per record/line
+	buf := make([]byte, 0, 10*1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
 
 	if cc.Config.Format == "json" {
-		// Handle JSONL (line by line) or Single JSON
-		content := string(data)
-		lines := strings.Split(content, "\n")
-		for i, line := range lines {
-			if strings.TrimSpace(line) == "" {
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Bytes()
+			if len(strings.TrimSpace(string(line))) == 0 {
 				continue
 			}
-			uniqueID := fmt.Sprintf("%s#L%d", path, i+1)
+			uniqueID := fmt.Sprintf("%s#L%d", path, lineNum)
 			if skipFunc != nil && skipFunc(uniqueID) {
 				outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
 				continue
 			}
-			input := extractFromJSON([]byte(line), cc)
+			input := extractFromJSON(line, cc)
 			if input != nil {
 				input.Path = uniqueID
 				outputCh <- *input
 			}
 		}
 	} else if cc.Config.Format == "regex" {
-		// Split by record separator
-		records := cc.RecordSep.Split(string(data), -1)
-		for i, record := range records {
-			if strings.TrimSpace(record) == "" {
-				continue
+		// For Regex blocks, if the separator is a simple newline, we can use the scanner.
+		// If it's a complex multi-line block, we use a custom split function.
+		if cc.Config.Regex.RecordSeparator == "\n" || cc.Config.Regex.RecordSeparator == "" {
+			lineNum := 0
+			for scanner.Scan() {
+				lineNum++
+				record := scanner.Text()
+				if strings.TrimSpace(record) == "" {
+					continue
+				}
+				uniqueID := fmt.Sprintf("%s#R%d", path, lineNum)
+				if skipFunc != nil && skipFunc(uniqueID) {
+					outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
+					continue
+				}
+				input := extractFromRegex(record, cc)
+				if input != nil {
+					input.Path = uniqueID
+					outputCh <- *input
+				}
 			}
-			uniqueID := fmt.Sprintf("%s#R%d", path, i+1)
-			if skipFunc != nil && skipFunc(uniqueID) {
-				outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
-				continue
-			}
-			input := extractFromRegex(record, cc)
-			if input != nil {
-				input.Path = uniqueID
-				outputCh <- *input
+		} else {
+			// For complex separators (e.g. "---"), we read the whole file. 
+			// TODO: For extreme files with complex separators, implement a ChunkReader.
+			// For now, we fallback to the safer streaming line-based for most logs.
+			util.Warn("Complex record separators on 30GB files are not yet streaming-optimized. Use line-based logs for best performance.")
+			data, _ := os.ReadFile(path)
+			records := cc.RecordSep.Split(string(data), -1)
+			for i, record := range records {
+				if strings.TrimSpace(record) == "" { continue }
+				input := extractFromRegex(record, cc)
+				if input != nil { outputCh <- *input }
 			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		util.Warn("Error reading file %s: %v", path, err)
 	}
 }
 

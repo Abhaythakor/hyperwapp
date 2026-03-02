@@ -124,6 +124,11 @@ ADDITIONAL INFO:
 			os.Exit(0)
 		}
 
+		// Background version check
+		if !silent && !showVersion {
+			go util.CheckForUpdates(config.Version)
+		}
+
 		if cpus > 0 {
 			runtime.GOMAXPROCS(cpus)
 		}
