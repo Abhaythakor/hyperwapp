@@ -17,7 +17,7 @@ testJsonInputs/
 
 # HyperWapp specific
 hyperwapp
-.hyperwapp.resume
+.HyperWapp.resume
 results.*
 *.jsonl
 *.csv
@@ -25,7 +25,8 @@ results.*
 *.md
 !README.md
 !docs/*.md
-!plan/*.md
+!testdata/**
+!sample_*.yaml
 
 
 

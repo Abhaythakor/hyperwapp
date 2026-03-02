@@ -24,6 +24,12 @@ Combine HyperWapp with other tools in your pipeline.
 subfinder -d airbnb.com | httpx | hyperwapp -c 50
 ```
 
+### Proxy Mode (Passive Scanning)
+Start a local proxy server and configure your browser to use it. HyperWapp will scan all traffic in real-time.
+```bash
+hyperwapp --proxy :8080
+```
+
 ---
 
 ## 2. Offline Scanning Scenarios

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec" // Added for self-update
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/Abhaythakor/hyperwapp/input"
 	"github.com/Abhaythakor/hyperwapp/input/custom"
 	"github.com/Abhaythakor/hyperwapp/input/online"
+	"github.com/Abhaythakor/hyperwapp/input/proxy" // Added proxy import
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/output"
 	"github.com/Abhaythakor/hyperwapp/progress"
@@ -29,10 +31,11 @@ var (
 	domain       bool
 	outputFile     string
 	outputFormat   string
-	url             string
-	urlList         string
-	inputConfigPath string // Renamed for universal custom parsing
-	concurrency     int
+	url            string
+	urlList        string
+	proxyAddr      string // Added for proxy mode
+	inputConfigPath string
+	concurrency    int
 	cpus           int
 	timeout      int
 	forceColor   bool
@@ -104,9 +107,20 @@ ADDITIONAL INFO:
 		}
 
 		if update {
+			// Update Fingerprints
 			if err := detect.UpdateFingerprints(); err != nil {
-				util.Fatal("Failed to update fingerprints: %v", err)
+				util.Warn("Failed to update fingerprints: %v", err)
 			}
+
+			// Update Binary
+			util.Info("Updating HyperWapp binary...")
+			cmd := exec.Command("go", "install", "github.com/Abhaythakor/hyperwapp@latest")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				util.Fatal("Failed to update HyperWapp: %v", err)
+			}
+			util.Info("HyperWapp updated successfully!")
 			os.Exit(0)
 		}
 
@@ -135,6 +149,8 @@ ADDITIONAL INFO:
 			inputSource = urlList
 		} else if url != "" {
 			inputSource = url
+		} else if proxyAddr != "" {
+			inputSource = proxyAddr
 		} else if len(args) > 0 {
 			inputSource = args[0]
 		} else if isInputFromPipe() {
@@ -142,7 +158,7 @@ ADDITIONAL INFO:
 		}
 
 		if inputSource == "" {
-			util.Fatal("No input provided. Use -u, -l, positional argument, or pipe input.")
+			util.Fatal("No input provided. Use -u, -l, -proxy, positional argument, or pipe input.")
 		}
 
 		if all && domain {
@@ -154,7 +170,11 @@ ADDITIONAL INFO:
 			resultCh <-chan []model.Detection
 		)
 
-		if offline {
+		if proxyAddr != "" {
+			inputModeVal = "proxy"
+			tracker, resultCh = runProxy(proxyAddr)
+			handleResults(resultCh, tracker, inputModeVal)
+		} else if offline {
 			inputModeVal = "offline"
 			tracker, resultCh = runOffline(inputSource)
 			handleResults(resultCh, tracker, inputModeVal)
@@ -234,6 +254,66 @@ func processOnlineTarget(target model.Target, timeout int) []model.Detection {
 
 func isInputFromPipe() bool {
 	return !term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+func runProxy(addr string) (*progress.Tracker, <-chan []model.Detection) {
+	tracker := progress.NewTracker(0, silent, !disableColor)
+	
+	// Create channels
+	proxyInputCh := make(chan model.OfflineInput, 100)
+	resultChWorker := make(chan []model.Detection, 100)
+	
+	// Start Proxy Server
+	go func() {
+		if err := proxy.StartProxy(addr, proxyInputCh); err != nil {
+			util.Fatal("Proxy error: %v", err)
+		}
+	}()
+
+	// Start Workers (similar to offline but processing live proxy data)
+	var wg sync.WaitGroup
+	numWorkers := concurrency
+	if numWorkers <= 0 {
+		numWorkers = 1
+	}
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for input := range proxyInputCh {
+				tracker.AddTotal(1) // Increment total as requests come in
+
+				currentInputType := model.InputTypeOffline
+				if headersOnly {
+					currentInputType = model.SourceHeadersOnly
+				} else if bodyOnly {
+					currentInputType = model.SourceBodyOnly
+				}
+
+				detections, err := wappalyzerEngine.Detect(input.Headers, input.Body, currentInputType)
+				if err != nil {
+					util.Warn("Failed to detect technologies for proxy input %s: %v", input.URL, err)
+					tracker.IncrementError()
+					continue
+				}
+
+				for i := range detections {
+					detections[i].Domain = input.Domain
+					detections[i].URL = input.URL
+				}
+				resultChWorker <- detections
+				tracker.IncrementSuccess()
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChWorker)
+	}()
+
+	return tracker, resultChWorker
 }
 
 func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection) {
@@ -435,6 +515,7 @@ func init() {
 	// Input Group
 	rootCmd.PersistentFlags().StringVarP(&url, "url", "u", "", "Single URL to scan")
 	rootCmd.PersistentFlags().StringVarP(&urlList, "list", "l", "", "File containing list of URLs to scan")
+	rootCmd.PersistentFlags().StringVar(&proxyAddr, "proxy", "", "Start a proxy server on this address (e.g., :8080) to passively scan traffic")
 	rootCmd.PersistentFlags().StringVar(&inputConfigPath, "input-config", "", "YAML file defining custom input parsing (JSON or Regex support)")
 	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "Offline mode: recursively parse directory structure (Katana, FFF, etc.)")
 

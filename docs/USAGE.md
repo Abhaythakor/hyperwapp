@@ -22,6 +22,11 @@ This document provides a detailed breakdown of every command-line flag available
 *   **Description:** Enables Offline Mode. Instead of treating the input as a URL or URL list, HyperWapp will recursively walk the provided directory path to find and parse stored HTTP responses (Katana, FFF, etc.).
 *   **Example:** `hyperwapp -offline ./data/`
 
+### `--proxy <address>`
+*   **Type:** String
+*   **Description:** Starts a proxy server on the specified address (e.g., `:8080`) to passively scan traffic from a browser or other tools.
+*   **Example:** `hyperwapp --proxy :8080`
+
 ### `--input-config <file>`
 *   **Type:** String
 *   **Description:** Path to a YAML configuration file for custom input parsing. Supports GJSON paths for JSON files and Regex patterns for any text-based logs or reports.
@@ -127,7 +132,7 @@ This document provides a detailed breakdown of every command-line flag available
 ### `--update`
 *   **Type:** Boolean
 *   **Default:** `false`
-*   **Description:** Downloads the latest technology fingerprints directly from the ProjectDiscovery WappalyzerGo repository.
+*   **Description:** Updates both the Wappalyzer fingerprints (from ProjectDiscovery) and the HyperWapp binary itself (using `go install`).
 
 ### `--version`
 *   **Type:** Boolean

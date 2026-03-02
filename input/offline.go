@@ -198,6 +198,9 @@ func countLines(path string) (uint32, error) {
 
 	var count uint32
 	scanner := bufio.NewScanner(file)
+	buf := make([]byte, 0, 10*1024*1024) // 10MB buffer
+	scanner.Buffer(buf, 10*1024*1024)
+	
 	for scanner.Scan() {
 		count++
 	}

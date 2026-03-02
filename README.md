@@ -47,7 +47,13 @@ hyperwapp -l urls.txt -c 100 -f jsonl -o results.jsonl
 hyperwapp -offline ./katana_responses/ -c 50 -f csv -o summary.csv
 ```
 
-### 4. Update Fingerprints
+### 4. Proxy Mode (Passive Scan)
+Configure your browser to use `http://127.0.0.1:8080` and browse the web.
+```bash
+hyperwapp --proxy :8080
+```
+
+### 5. Update Fingerprints & Tool
 ```bash
 hyperwapp --update
 ```
