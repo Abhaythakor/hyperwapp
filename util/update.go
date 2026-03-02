@@ -36,15 +36,11 @@ func CheckForUpdates(currentVersion string) {
 	current := strings.TrimPrefix(currentVersion, "v")
 
 	if isNewer(current, latest) {
-		fmt.Printf("
-%s A new version of HyperWapp is available: %s (Current: %s)
-", 
+		fmt.Printf("\n%s A new version of HyperWapp is available: %s (Current: %s)\n", 
 			NewColorizer(true).Yellow("[!]"),
 			NewColorizer(true).Green("v"+latest),
 			currentVersion)
-		fmt.Printf("%s Run %s to upgrade.
-
-", 
+		fmt.Printf("%s Run %s to upgrade.\n\n", 
 			NewColorizer(true).Yellow("[!]"),
 			NewColorizer(true).Cyan("hyperwapp --update"))
 	}

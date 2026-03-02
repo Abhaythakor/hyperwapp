@@ -104,7 +104,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 			util.Warn("Complex record separators on 30GB files are not yet streaming-optimized. Use line-based logs for best performance.")
 			data, _ := os.ReadFile(path)
 			records := cc.RecordSep.Split(string(data), -1)
-			for i, record := range records {
+			for _, record := range records {
 				if strings.TrimSpace(record) == "" { continue }
 				input := extractFromRegex(record, cc)
 				if input != nil { outputCh <- *input }
