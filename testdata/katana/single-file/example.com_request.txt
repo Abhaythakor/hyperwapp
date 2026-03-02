@@ -1,0 +1,13 @@
+GET /test HTTP/1.1
+Host: example.com
+User-Agent: test-agent
+
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Server: Apache
+
+<!DOCTYPE html>
+<html>
+<head><title>Katana Test</title></head>
+<body><h1>Katana Single File Test</h1></body>
+</html>

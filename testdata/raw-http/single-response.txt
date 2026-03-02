@@ -1,0 +1,10 @@
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+Server: Apache/2.4.1 (Unix)
+Content-Length: 100
+
+<!DOCTYPE html>
+<html>
+<head><title>Raw HTTP Test</title></head>
+<body><h1>Single Raw HTTP Response</h1></body>
+</html>

@@ -1,0 +1,16 @@
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+Server: Apache/2.4.1 (Unix)
+Content-Length: 100
+
+<!DOCTYPE html>
+<html>
+<head><title>Raw HTTP Test</title></head>
+<body><h1>Multiple Raw HTTP Response - First</h1></body>
+</html>
+HTTP/1.1 404 Not Found
+Content-Type: text/plain
+Server: Nginx
+Content-Length: 20
+
+Not Found
