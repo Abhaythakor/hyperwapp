@@ -30,6 +30,12 @@ If a directory or file doesn't match the above patterns, HyperWapp falls back to
 *   **Inference:** The domain is inferred from the filename.
 *   **Example:** `hyperwapp -offline ./my_web_assets/`
 
+### Custom Input Configuration (YAML)
+For files that don't fit any standard tool output, you can define your own parsing rules using a YAML file.
+*   **Support:** Works with JSON, JSONL, and any text-based log format.
+*   **Features:** GJSON paths for JSON fields and Regex extraction for text blocks.
+*   **Example:** `hyperwapp -offline data.txt --input-config rules.yaml`
+
 ---
 
 ## 2. The Auto-Detection Logic

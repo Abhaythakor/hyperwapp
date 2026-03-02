@@ -77,3 +77,45 @@ hyperwapp urls.txt -f jsonl -o live.jsonl
 # Terminal 2
 tail -f live.jsonl | jq .technology
 ```
+
+---
+
+## 4. Custom Input Configuration Scenarios
+
+### Parsing Custom JSON (GJSON Paths)
+If you have a JSON file from a custom tool with a different structure, use GJSON paths to map fields.
+```bash
+# Example JSON line: {"target_url": "...", "resp": {"header_map": {...}, "html": "..."}}
+# Config (config.yaml):
+# format: "json"
+# json:
+#   url_path: "target_url"
+#   headers_path: "resp.header_map"
+#   body_path: "resp.html"
+
+hyperwapp -offline data.jsonl --input-config config.yaml
+```
+
+### Parsing Custom Log Files (Regex Blocks)
+If your data is stored in a text file separated by a specific string, use the Regex parser.
+```bash
+# Example Log:
+# URL: https://example.com
+# [HEADERS]
+# Server: Apache
+# [BODY]
+# <html>...</html>
+# ---
+# URL: https://target.com
+# ...
+
+# Config (config.yaml):
+# format: "regex"
+# record_separator: "\n---\n"
+# regex:
+#   url_regex: "URL: (https?://[^\\s\n]+)"
+#   headers_regex: "(?s)\\[HEADERS\\]\\n(.*?)\n\\[BODY\\]"
+#   body_regex: "(?s)\\[BODY\\]\\n(.*)"
+
+hyperwapp -offline my_logs.txt --input-config config.yaml
+```

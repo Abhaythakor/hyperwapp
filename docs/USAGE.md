@@ -22,6 +22,11 @@ This document provides a detailed breakdown of every command-line flag available
 *   **Description:** Enables Offline Mode. Instead of treating the input as a URL or URL list, HyperWapp will recursively walk the provided directory path to find and parse stored HTTP responses (Katana, FFF, etc.).
 *   **Example:** `hyperwapp -offline ./data/`
 
+### `--input-config <file>`
+*   **Type:** String
+*   **Description:** Path to a YAML configuration file for custom input parsing. Supports GJSON paths for JSON files and Regex patterns for any text-based logs or reports.
+*   **Example:** `hyperwapp -offline ./custom_logs/ --input-config config.yaml`
+
 ### `-auto`
 *   **Type:** Boolean
 *   **Default:** `true`
