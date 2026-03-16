@@ -112,9 +112,10 @@ ADDITIONAL INFO:
 				util.Warn("Failed to update fingerprints: %v", err)
 			}
 
-			// Update Binary via Go Install
+			// Update Binary via Go Install (Bypass cache with GOPROXY=direct)
 			util.Info("Updating HyperWapp binary via go install...")
 			cmd := exec.Command("go", "install", "github.com/Abhaythakor/hyperwapp@latest")
+			cmd.Env = append(os.Environ(), "GOPROXY=direct") // Force direct download from GitHub
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
@@ -124,13 +125,18 @@ ADDITIONAL INFO:
 			// Local Rebuild Logic: Check if we are running from a local development folder
 			exePath, err := os.Executable()
 			if err == nil {
+				realExePath, _ := filepath.EvalSymlinks(exePath)
+				absExeDir := filepath.Dir(realExePath)
 				cwd, _ := os.Getwd()
-				// If the binary is in the current directory, rebuild it locally too
-				if filepath.Dir(exePath) == cwd {
-					util.Info("Local binary detected. Rebuilding ./hyperwapp...")
-					buildCmd := exec.Command("go", "build", "-o", filepath.Base(exePath), "main.go")
+				absCwd, _ := filepath.Abs(cwd)
+
+				if absExeDir == absCwd {
+					util.Info("Local binary detected at %s. Rebuilding...", realExePath)
+					buildCmd := exec.Command("go", "build", "-o", filepath.Base(realExePath), "main.go")
 					if err := buildCmd.Run(); err == nil {
 						util.Info("Local binary updated successfully!")
+					} else {
+						util.Warn("Local rebuild failed: %v", err)
 					}
 				}
 			}
