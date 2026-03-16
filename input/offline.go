@@ -1,7 +1,6 @@
 package input
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -197,14 +196,35 @@ func countLines(path string) (uint32, error) {
 	defer file.Close()
 
 	var count uint32
-	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 0, 10*1024*1024) // 10MB buffer
-	scanner.Buffer(buf, 10*1024*1024)
+	// Use a 1MB buffer for reading
+	buf := make([]byte, 1024*1024)
+	var lastChar byte
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			for i := 0; i < n; i++ {
+				if buf[i] == '\n' {
+					count++
+				}
+			}
+			lastChar = buf[n-1]
+		}
+		if err != nil {
+			break
+		}
+	}
 	
-	for scanner.Scan() {
+	// If the file has content but doesn't end with a newline, count the last line
+	if count == 0 {
+		fi, _ := os.Stat(path)
+		if fi.Size() > 0 {
+			return 1, nil
+		}
+	} else if lastChar != '\n' {
 		count++
 	}
-	return count, scanner.Err()
+
+	return count, nil
 }
 
 func isTargetFile(fileName string, format OfflineFormat) bool {
