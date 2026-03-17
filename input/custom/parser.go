@@ -51,7 +51,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 	}
 	defer file.Close()
 
-	reader := bufio.NewReader(file)
+	reader := bufio.NewReaderSize(file, 1024*1024) // 1MB read buffer
 
 	if cc.Config.Format == "json" {
 		lineNum := 0
@@ -59,29 +59,20 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 			lineNum++
 			line, err := reader.ReadBytes('\n')
 			if len(line) > 0 {
-				// Fast check if line is empty whitespace
-				isEmpty := true
-				for _, b := range line {
-					if b != ' ' && b != '\t' && b != '\r' && b != '\n' {
-						isEmpty = false
-						break
-					}
-				}
-				if isEmpty {
-					if err != nil { break }
-					continue
-				}
-
 				uniqueID := fmt.Sprintf("%s#L%d", path, lineNum)
+				
+				// FAST SKIP: Check resume log before doing anything else
 				if skipFunc != nil && skipFunc(uniqueID) {
 					outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
 					if err != nil { break }
 					continue
 				}
-				input := extractFromJSON(line, cc)
-				if input != nil {
-					input.Path = uniqueID
-					outputCh <- *input
+
+				// Move the JSON parsing work into the channel
+				// We wrap the raw data in OfflineInput so the WORKERS handle the GJSON work.
+				outputCh <- model.OfflineInput{
+					Path:    uniqueID,
+					RawJSON: line, // New field to hold raw data for parallel processing
 				}
 			}
 			if err != nil {
@@ -89,27 +80,22 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 			}
 		}
 	} else if cc.Config.Format == "regex" {
+		// Similar optimization for line-based Regex
 		if cc.Config.Regex.RecordSeparator == "\n" || cc.Config.Regex.RecordSeparator == "" {
 			lineNum := 0
 			for {
 				lineNum++
 				line, err := reader.ReadBytes('\n')
 				if len(line) > 0 {
-					record := strings.TrimSpace(string(line))
-					if record == "" {
-						if err != nil { break }
-						continue
-					}
 					uniqueID := fmt.Sprintf("%s#R%d", path, lineNum)
 					if skipFunc != nil && skipFunc(uniqueID) {
 						outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
 						if err != nil { break }
 						continue
 					}
-					input := extractFromRegex(record, cc)
-					if input != nil {
-						input.Path = uniqueID
-						outputCh <- *input
+					outputCh <- model.OfflineInput{
+						Path:     uniqueID,
+						RawRegex: line, // New field
 					}
 				}
 				if err != nil {
@@ -117,21 +103,19 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 				}
 			}
 		} else {
-			// For complex separators (e.g. "---"), we read the whole file. 
-			// TODO: For extreme files with complex separators, implement a ChunkReader.
-			util.Warn("Complex record separators on 30GB files are not yet streaming-optimized. Use line-based logs for best performance.")
+			// For complex separators, we stick to the existing logic but keep it safe
 			data, _ := os.ReadFile(path)
 			records := cc.RecordSep.Split(string(data), -1)
 			for _, record := range records {
 				if strings.TrimSpace(record) == "" { continue }
-				input := extractFromRegex(record, cc)
+				input := ExtractFromRegex(record, cc)
 				if input != nil { outputCh <- *input }
 			}
 		}
 	}
 }
 
-func extractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
+func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 	cfg := cc.Config.JSON
 	res := gjson.ParseBytes(data)
 	if !res.IsObject() {
@@ -158,7 +142,7 @@ func extractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 	return out
 }
 
-func extractFromRegex(record string, cc *CompiledConfig) *model.OfflineInput {
+func ExtractFromRegex(record string, cc *CompiledConfig) *model.OfflineInput {
 	out := &model.OfflineInput{Headers: make(map[string][]string)}
 
 	if cc.URLRegex != nil {

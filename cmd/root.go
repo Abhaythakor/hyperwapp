@@ -415,7 +415,6 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 				}
 
 				// Resume check (Double check for safety)
-				// Prefer Path for offline resume ID
 				id := offInput.Path
 				if id == "" {
 					id = offInput.URL
@@ -429,6 +428,26 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 					continue
 				}
 
+				// PARALLEL EXTRACTION for Custom Configs
+				var currentInput model.OfflineInput = offInput
+				if customCfg != nil {
+					var extracted *model.OfflineInput
+					if len(offInput.RawJSON) > 0 {
+						extracted = custom.ExtractFromJSON(offInput.RawJSON, customCfg)
+					} else if len(offInput.RawRegex) > 0 {
+						extracted = custom.ExtractFromRegex(string(offInput.RawRegex), customCfg)
+					}
+					
+					if extracted != nil {
+						currentInput = *extracted
+						currentInput.Path = offInput.Path // Keep original ID path
+					} else if len(offInput.RawJSON) > 0 || len(offInput.RawRegex) > 0 {
+						// Extraction failed but data was provided
+						tracker.IncrementError()
+						continue
+					}
+				}
+
 				// Select Detection Strategy
 				currentInputType := model.InputTypeOffline
 				if headersOnly {
@@ -438,17 +457,17 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 				}
 
 				// HEAVY OPERATION: The Regex Engine
-				detections, err := wappalyzerEngine.Detect(offInput.Headers, offInput.Body, currentInputType)
+				detections, err := wappalyzerEngine.Detect(currentInput.Headers, currentInput.Body, currentInputType)
 				if err != nil {
-					util.Warn("Failed: %s (%v)", id, err) // Compact log
+					util.Warn("Failed: %s (%v)", id, err)
 					tracker.IncrementError()
 					continue
 				}
 
 				// Enrich Data
 				for i := range detections {
-					detections[i].Domain = offInput.Domain
-					detections[i].URL = offInput.URL
+					detections[i].Domain = currentInput.Domain
+					detections[i].URL = currentInput.URL
 				}
 
 				// Send results

@@ -19,12 +19,14 @@ type Detection struct {
 
 // OfflineInput represents the normalized input from offline sources.
 type OfflineInput struct {
-	Domain  string
-	URL     string
-	Headers map[string][]string
-	Body    []byte
-	Path    string // Source file path for fast resume
-	Skipped bool   // True if this item was already processed (resume mode)
+	Domain   string
+	URL      string
+	Headers  map[string][]string
+	Body     []byte
+	Path     string // Source file path for fast resume
+	Skipped  bool   // True if this item was already processed (resume mode)
+	RawJSON  []byte // Raw JSON line for parallel parsing
+	RawRegex []byte // Raw Regex record for parallel parsing
 }
 
 // Validate performs schema validation on an OfflineInput struct.
