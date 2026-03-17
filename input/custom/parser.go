@@ -127,10 +127,19 @@ func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 	out.Domain = res.Get(cfg.DomainPath).String()
 	out.Body = []byte(res.Get(cfg.BodyPath).String())
 
-	// Headers
-	hMap := res.Get(cfg.HeadersPath).Map()
-	for k, v := range hMap {
-		out.Headers[k] = []string{v.String()}
+	// Headers (optimized extraction)
+	if cfg.HeadersPath != "" {
+		res.Get(cfg.HeadersPath).ForEach(func(key, value gjson.Result) bool {
+			k := key.String()
+			if value.IsArray() {
+				for _, item := range value.Array() {
+					out.Headers[k] = append(out.Headers[k], item.String())
+				}
+			} else {
+				out.Headers[k] = []string{value.String()}
+			}
+			return true // continue
+		})
 	}
 
 	if out.Domain == "" && out.URL != "" {

@@ -240,13 +240,14 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 			continue
 		}
 
-		// Only print to CLI if NOT silent. 
-		// If silent, we still want to write to fileWriter.
-		if !silent {
+		// Only print to CLI if NOT silent and we have technologies
+		if !silent && len(detections) > 0 {
 			tracker.Clear()
 			if err := cliWriter.Write(detections); err != nil {
 				util.Warn("Error writing to CLI: %v", err)
 			}
+			// Note: tracker.Refresh() is now handled by a background timer 
+			// but we can force it here for better interactivity if needed.
 		}
 
 		if fileWriter != nil {

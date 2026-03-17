@@ -66,8 +66,7 @@ func (w *CSVWriter) Write(detections []model.Detection) error {
 			return err
 		}
 	}
-	w.writer.Flush() // Flush after each batch to ensure data is written
-	return w.writer.Error()
+	return nil
 }
 
 // SetMode updates the output mode.

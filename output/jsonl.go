@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"sync"
@@ -12,7 +13,8 @@ import (
 // JSONLWriter implements the Writer interface for JSON Lines output.
 type JSONLWriter struct {
 	file    *os.File
-	encoder *json.Encoder // Reuse encoder
+	buf     *bufio.Writer // Buffered IO
+	encoder *json.Encoder
 	mu      sync.Mutex
 	mode    string
 }
@@ -31,9 +33,11 @@ func NewJSONLWriter(filePath string, appendMode bool) (*JSONLWriter, error) {
 		return nil, err
 	}
 
+	bufferedWriter := bufio.NewWriterSize(file, 256*1024) // 256KB buffer
 	return &JSONLWriter{
 		file:    file,
-		encoder: json.NewEncoder(file),
+		buf:     bufferedWriter,
+		encoder: json.NewEncoder(bufferedWriter),
 		mode:    "all",
 	}, nil
 }
@@ -67,7 +71,10 @@ func (w *JSONLWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) e
 
 func (w *JSONLWriter) Close() {
 	if w.file != nil {
+		w.mu.Lock()
+		w.buf.Flush()
 		w.file.Sync()
 		w.file.Close()
+		w.mu.Unlock()
 	}
 }
