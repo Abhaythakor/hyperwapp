@@ -234,20 +234,26 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 		}
 	}
 
+	// High-speed result processing loop
 	for detections := range resultCh {
 		if detections == nil {
 			continue
 		}
-		tracker.Clear()
-		if err := cliWriter.Write(detections); err != nil {
-			util.Warn("Error writing to CLI: %v", err)
+
+		// Only print to CLI if NOT silent. 
+		// If silent, we still want to write to fileWriter.
+		if !silent {
+			tracker.Clear()
+			if err := cliWriter.Write(detections); err != nil {
+				util.Warn("Error writing to CLI: %v", err)
+			}
 		}
+
 		if fileWriter != nil {
 			if err := fileWriter.Write(detections); err != nil {
 				util.Warn("Error writing to file: %v", err)
 			}
 		}
-		tracker.Refresh()
 	}
 
 	tracker.Done()

@@ -16,12 +16,13 @@ type Tracker struct {
 	success    atomic.Uint32 // Tracks targets with detections
 	errors     atomic.Uint32 // Tracks timeouts/network errors
 	startTime  time.Time
-	lastUpdate time.Time     // New: For throttling
+	lastUpdate time.Time
 	quiet      bool
 	enabled    bool
 	color      *util.Colorizer
 	started    bool
 	finalized  atomic.Bool // Tracks if discovery is finished
+	stopChan   chan struct{}
 }
 
 // NewTracker creates a new progress tracker.
@@ -32,14 +33,36 @@ func NewTracker(total uint32, quiet, colorize bool) *Tracker {
 		quiet:      quiet,
 		enabled:    !quiet,
 		color:      util.NewColorizer(colorize),
+		stopChan:   make(chan struct{}),
 	}
 	t.total.Store(total)
 	if total > 0 {
 		t.started = true
 		t.finalized.Store(true) // If total is known at start, it's finalized
-		t.printProgress(true)   // Force print first update
+		t.printProgress(true)
 	}
+
+	if t.enabled {
+		go t.refreshLoop()
+	}
+
 	return t
+}
+
+func (t *Tracker) refreshLoop() {
+	ticker := time.NewTicker(150 * time.Millisecond) // Refresh UI at 6Hz
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if t.started {
+				t.printProgress(false)
+			}
+		case <-t.stopChan:
+			return
+		}
+	}
 }
 
 // FinalizeTotal marks the discovery phase as complete.
@@ -59,7 +82,6 @@ func (t *Tracker) IncrementSuccess() {
 	}
 	t.success.Add(1)
 	t.completed.Add(1)
-	t.printProgress(false)
 }
 
 // IncrementError records a failed target.
@@ -69,7 +91,6 @@ func (t *Tracker) IncrementError() {
 	}
 	t.errors.Add(1)
 	t.completed.Add(1)
-	t.printProgress(false)
 }
 
 // AddTotal atomically adds to the total count.
@@ -81,8 +102,6 @@ func (t *Tracker) AddTotal(count uint32) {
 	if !t.started && t.total.Load() > 0 {
 		t.started = true
 		t.printProgress(true) // Force print initial state
-	} else if t.started && !t.finalized.Load() {
-		t.printProgress(false)
 	}
 }
 
@@ -91,14 +110,7 @@ func (t *Tracker) Increment() {
 	if !t.enabled {
 		return
 	}
-
 	t.completed.Add(1)
-
-	// Only print if the tracker has actually started (i.e., total is known and > 0)
-	// and if we have completed items, to avoid showing Completed:0 initially.
-	if t.started {
-		t.printProgress(false)
-	}
 }
 
 // Refresh re-prints the current progress line.
@@ -111,6 +123,8 @@ func (t *Tracker) Done() {
 	if !t.enabled {
 		return
 	}
+	close(t.stopChan) // Stop refresh loop
+
 	// Clear the progress line before printing final summary.
 	if t.started {
 		t.Clear()

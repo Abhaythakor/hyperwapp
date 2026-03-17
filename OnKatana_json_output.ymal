@@ -1,0 +1,11 @@
+# HyperWapp Custom JSON Input Configuration
+format: "json"
+
+json:
+  # Example for test.jsonl
+  url_path: "request.endpoint"
+  headers_path: "response.headers"
+  body_path: "response.body"
+
+  # Optional regex
+  # url_regex: "https?://[^\\s]+"

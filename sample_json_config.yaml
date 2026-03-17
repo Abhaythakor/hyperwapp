@@ -1,11 +1,14 @@
-# HyperWapp Custom JSON Input Configuration
+# HyperWapp Custom JSON Input Configuration 
+
+# its for katana raw data to json than its take as input
+
 format: "json"
 
 json:
   # Example for test.jsonl
-  url_path: "request.endpoint"
-  headers_path: "response.headers"
-  body_path: "response.body"
+  url_path: "url"
+  headers_path: "headers"
+  body_path: "body"
 
   # Optional regex
   # url_regex: "https?://[^\\s]+"
