@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/Abhaythakor/hyperwapp/model"
@@ -15,6 +16,9 @@ import (
 func StartProxy(addr string, outputCh chan<- model.OfflineInput) error {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
+	
+	// Silence the internal goproxy logger to prevent terminal clutter
+	proxy.Logger = log.New(io.Discard, "", 0)
 
 	// Enable MITM for all HTTPS traffic to intercept headers/body
 	proxy.OnRequest().HandleConnect(goproxy.AlwaysMitm)
