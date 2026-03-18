@@ -48,6 +48,8 @@ var (
 	resume       bool
 	update       bool
 	showVersion  bool
+
+	wappalyzerEngine *detect.WappalyzerEngine
 )
 
 var resumeMgr *util.ResumeManager
@@ -156,6 +158,11 @@ ADDITIONAL INFO:
 		}
 
 		var err error
+		wappalyzerEngine, err = detect.NewWappalyzerEngine()
+		if err != nil {
+			util.Fatal("Failed to initialize Wappalyzer engine: %v", err)
+		}
+
 		resumeMgr, err = util.NewResumeManager(".HyperWapp.resume", resume)
 		if err != nil {
 			util.Warn("Failed to initialize resume manager: %v", err)
@@ -198,13 +205,13 @@ ADDITIONAL INFO:
 
 		if proxyAddr != "" {
 			inputModeVal = "proxy"
-			tracker, resultCh = runProxy(proxyAddr)
+			tracker, resultCh = runProxy(proxyAddr, wappalyzerEngine)
 		} else if offline {
 			inputModeVal = "offline"
-			tracker, resultCh = runOffline(inputSource)
+			tracker, resultCh = runOffline(inputSource, wappalyzerEngine)
 		} else {
 			inputModeVal = "online"
-			tracker, resultCh = runOnline(inputSource)
+			tracker, resultCh = runOnline(inputSource, wappalyzerEngine)
 		}
 
 		// Run result handler in the background
@@ -281,7 +288,7 @@ func isInputFromPipe() bool {
 	return !term.IsTerminal(int(os.Stdin.Fd()))
 }
 
-func runProxy(addr string) (*progress.Tracker, <-chan []model.Detection) {
+func runProxy(addr string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	tracker := progress.NewTracker(0, silent, !disableColor)
 	
 	// Create channels
@@ -307,13 +314,6 @@ func runProxy(addr string) (*progress.Tracker, <-chan []model.Detection) {
 		go func() {
 			defer wg.Done()
 
-			// Private worker engine for parallelism
-			workerEngine, err := detect.NewWappalyzerEngine()
-			if err != nil {
-				util.Warn("Failed to init worker engine: %v", err)
-				return
-			}
-
 			for input := range proxyInputCh {
 				tracker.AddTotal(1) // Increment total as requests come in
 
@@ -324,7 +324,7 @@ func runProxy(addr string) (*progress.Tracker, <-chan []model.Detection) {
 					currentInputType = model.SourceBodyOnly
 				}
 
-				detections, err := workerEngine.Detect(input.Headers, input.Body, currentInputType)
+				detections, err := engine.Detect(input.Headers, input.Body, currentInputType)
 				if err != nil {
 					util.Warn("Failed to detect technologies for proxy input %s: %v", input.URL, err)
 					tracker.IncrementError()
@@ -349,7 +349,7 @@ func runProxy(addr string) (*progress.Tracker, <-chan []model.Detection) {
 	return tracker, resultChWorker
 }
 
-func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection) {
+func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	absInputSource, err := filepath.Abs(inputSource)
 	if err != nil {
 		util.Fatal("Error resolving absolute path for input: %v", err)
@@ -409,13 +409,6 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		go func() {
 			defer wg.Done()
 			
-			// Give each worker its OWN engine for true parallelism
-			workerEngine, err := detect.NewWappalyzerEngine()
-			if err != nil {
-				util.Warn("Failed to init worker engine: %v", err)
-				return
-			}
-
 			for offInput := range offlineWorkerInputCh {
 				// Handle SKIPPED items (Resume)
 				if offInput.Skipped {
@@ -465,8 +458,8 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 					currentInputType = model.SourceBodyOnly
 				}
 
-				// HEAVY OPERATION: The Regex Engine (Now private per worker)
-				detections, err := workerEngine.Detect(currentInput.Headers, currentInput.Body, currentInputType)
+				// HEAVY OPERATION: The Regex Engine (Shared engine)
+				detections, err := engine.Detect(currentInput.Headers, currentInput.Body, currentInputType)
 				if err != nil {
 					util.Warn("Failed: %s (%v)", id, err)
 					tracker.IncrementError()
@@ -495,7 +488,7 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 	return tracker, resultChWorker
 }
 
-func runOnline(inputSource string) (*progress.Tracker, <-chan []model.Detection) {
+func runOnline(inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	targets, err := input.ResolveInput(inputSource, false)
 	if err != nil {
 		util.Fatal("Error resolving input: %v", err)
@@ -516,13 +509,6 @@ func runOnline(inputSource string) (*progress.Tracker, <-chan []model.Detection)
 		go func() {
 			defer wg.Done()
 			
-			// Worker engine initialization for true parallelism
-			workerEngine, err := detect.NewWappalyzerEngine()
-			if err != nil {
-				util.Warn("Failed to init worker engine: %v", err)
-				return
-			}
-
 			for target := range targetCh {
 				if resumeMgr.IsCompleted(target.URL) {
 					tracker.IncrementSuccess()
@@ -536,7 +522,7 @@ func runOnline(inputSource string) (*progress.Tracker, <-chan []model.Detection)
 					continue
 				}
 
-				detections, err := workerEngine.Detect(headers, body, model.SourceWappalyzer)
+				detections, err := engine.Detect(headers, body, model.SourceWappalyzer)
 				if err != nil {
 					util.Warn("Failed to detect for %s: %v", target.URL, err)
 					tracker.IncrementError()
@@ -616,8 +602,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "format", "f", "cli", "Output format: csv, json, jsonl, txt, md")
 
 	// Performance Group
-	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", 50, "Number of concurrent workers (goroutines)")
-	rootCmd.PersistentFlags().IntVarP(&concurrency, "threads", "t", 50, "Number of concurrent workers (alias for --concurrency)")
+	rootCmd.PersistentFlags().IntVarP(&concurrency, "concurrency", "c", runtime.NumCPU()*2, "Number of concurrent workers (goroutines)")
+	rootCmd.PersistentFlags().IntVarP(&concurrency, "threads", "t", runtime.NumCPU()*2, "Number of concurrent workers (alias for --concurrency)")
 	rootCmd.PersistentFlags().IntVar(&cpus, "cpus", 0, "Limit number of physical CPU cores to use (GOMAXPROCS)")
 	rootCmd.PersistentFlags().IntVar(&timeout, "timeout", 10, "HTTP timeout in seconds for online scanning")
 
