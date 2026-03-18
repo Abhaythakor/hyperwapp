@@ -72,9 +72,9 @@ func (w *JSONLWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) e
 func (w *JSONLWriter) Close() {
 	if w.file != nil {
 		w.mu.Lock()
-		w.buf.Flush()
-		w.file.Sync()
-		w.file.Close()
+		_ = w.buf.Flush() // Flush the 4MB RAM buffer
+		_ = w.file.Sync()  // Force OS to write to physical disk
+		_ = w.file.Close()
 		w.mu.Unlock()
 	}
 }

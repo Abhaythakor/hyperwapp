@@ -58,20 +58,14 @@ func StartProxy(addr string, outputCh chan<- model.OfflineInput) error {
 	util.Info("Starting Proxy Server on %s", addr)
 	util.Info("Configure your browser to use this proxy to scan browsed pages.")
 	
-	// Handle Ctrl+C gracefully
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	
 	server := &http.Server{Addr: addr, Handler: proxy}
 	
+	// Start server in background
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			util.Fatal("Proxy server failed: %v", err)
 		}
 	}()
 
-	<-sigs
-	util.Info("Stopping Proxy Server...")
-	close(outputCh)
 	return nil
 }

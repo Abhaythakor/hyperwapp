@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec" // Added for self-update
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 
 	"github.com/Abhaythakor/hyperwapp/config"
 	"github.com/Abhaythakor/hyperwapp/detect"
@@ -196,18 +199,34 @@ ADDITIONAL INFO:
 			resultCh <-chan []model.Detection
 		)
 
+		// Handle Ctrl+C for graceful shutdown and buffer flushing
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
 		if proxyAddr != "" {
 			inputModeVal = "proxy"
 			tracker, resultCh = runProxy(proxyAddr)
-			handleResults(resultCh, tracker, inputModeVal)
 		} else if offline {
 			inputModeVal = "offline"
 			tracker, resultCh = runOffline(inputSource)
-			handleResults(resultCh, tracker, inputModeVal)
 		} else {
 			inputModeVal = "online"
 			tracker, resultCh = runOnline(inputSource)
+		}
+
+		// Run result handler in the background
+		done := make(chan struct{})
+		go func() {
 			handleResults(resultCh, tracker, inputModeVal)
+			close(done)
+		}()
+
+		// Wait for either the scan to finish naturally or a Ctrl+C
+		select {
+		case <-ctx.Done():
+			util.Info("Interrupt received, shutting down gracefully...")
+		case <-done:
+			// Scan finished naturally
 		}
 	},
 }
