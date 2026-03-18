@@ -242,7 +242,7 @@ func isTargetFile(fileName string, format OfflineFormat) bool {
 
 // ParseOffline dispatches the parsing to the correct handler based on detected format.
 func ParseOffline(path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+	outputCh := make(chan model.OfflineInput, 1000) // Buffer the bridge
 
 	format := DetectOfflineFormat(path, customCfg != nil)
 	if format == FormatUnknown {

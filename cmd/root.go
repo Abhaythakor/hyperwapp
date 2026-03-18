@@ -383,8 +383,8 @@ func runOffline(inputSource string) (*progress.Tracker, <-chan []model.Detection
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
 
-	offlineWorkerInputCh := make(chan model.OfflineInput, concurrency*2) // Increase buffer
-	resultChWorker := make(chan []model.Detection, concurrency*2)
+	offlineWorkerInputCh := make(chan model.OfflineInput, 10000) // Large buffer for input queue
+	resultChWorker := make(chan []model.Detection, 10000)      // Large buffer for output queue
 	var wg sync.WaitGroup
 
 	numWorkers := concurrency

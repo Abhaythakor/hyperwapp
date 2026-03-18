@@ -33,7 +33,7 @@ func NewJSONLWriter(filePath string, appendMode bool) (*JSONLWriter, error) {
 		return nil, err
 	}
 
-	bufferedWriter := bufio.NewWriterSize(file, 256*1024) // 256KB buffer
+	bufferedWriter := bufio.NewWriterSize(file, 4*1024*1024) // 4MB RAM Buffer
 	return &JSONLWriter{
 		file:    file,
 		buf:     bufferedWriter,
