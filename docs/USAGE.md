@@ -25,6 +25,11 @@ This document provides a detailed breakdown of every command-line flag available
 ### `--proxy <address>`
 *   **Type:** String
 *   **Description:** Starts a proxy server on the specified address (e.g., `:8080`) to passively scan traffic from a browser or other tools.
+*   **SSL/TLS Instructions:** 
+    1.  When you start the proxy, HyperWapp will create a file called `hyperwapp-ca.crt` in your current folder.
+    2.  To avoid "Connection is not private" errors, you **must** import this file into your browser's **Trusted Root Certificate Authorities**.
+    3.  **Chrome/Edge:** `Settings -> Security -> Manage Certificates -> Authorities -> Import`.
+    4.  **Firefox:** `Settings -> Privacy & Security -> Certificates -> View Certificates -> Authorities -> Import`.
 *   **Example:** `hyperwapp --proxy :8080`
 
 ### `--input-config <file>`
