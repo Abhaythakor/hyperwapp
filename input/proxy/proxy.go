@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/util"
