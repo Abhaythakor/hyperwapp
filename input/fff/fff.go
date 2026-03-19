@@ -75,12 +75,20 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 						hPath, hasHeaders := files["headers"]
 						if hasHeaders {
 							if skipFunc(hPath) {
-								outputCh <- model.OfflineInput{Path: hPath, Skipped: true}
+								input := model.OfflineInputPool.Get().(*model.OfflineInput)
+								input.Reset()
+								input.Path = hPath
+								input.Skipped = true
+								outputCh <- *input
 								continue
 							}
 						} else if bPath, ok := files["body"]; ok {
 							if skipFunc(bPath) {
-								outputCh <- model.OfflineInput{Path: bPath, Skipped: true}
+								input := model.OfflineInputPool.Get().(*model.OfflineInput)
+								input.Reset()
+								input.Path = bPath
+								input.Skipped = true
+								outputCh <- *input
 								continue
 							}
 						}
@@ -101,10 +109,9 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 
 // buildFFFInputsFromGroup constructs OfflineInput objects from a single grouped fff files map.
 func buildFFFInputsFromGroup(files map[string]string, root, domain string) []model.OfflineInput {
-	var inputs []model.OfflineInput
+	input := model.OfflineInputPool.Get().(*model.OfflineInput)
+	input.Reset()
 
-	headers := make(map[string][]string)
-	var body []byte
 	var fileURLPath string // To derive the URL correctly
 	var sourcePath string
 
@@ -114,7 +121,7 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 		if err != nil {
 			util.Warn("Error parsing fff headers file %s: %v", hPath, err)
 		} else {
-			headers = parsedHeaders
+			input.Headers = parsedHeaders
 		}
 		fileURLPath = hPath
 	}
@@ -126,7 +133,7 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 		if err != nil {
 			util.Warn("Error reading fff body file %s: %v", bPath, err)
 		} else {
-			body = b
+			input.Body = b
 		}
 		if fileURLPath == "" { // If only body file exists, use its path for URL
 			fileURLPath = bPath
@@ -134,16 +141,12 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 	}
 
 	url := DeriveURL(root, fileURLPath, domain)
+	input.Domain = domain
+	input.URL = url
+	input.Path = sourcePath
 
-	inputs = append(inputs, model.OfflineInput{
-		Domain:  domain,
-		URL:     url,
-		Headers: headers,
-		Body:    body,
-		Path:    sourcePath,
-	})
 	util.Debug("Created FFF OfflineInput for URL: %s (Domain: %s)", url, domain)
-	return inputs
+	return []model.OfflineInput{*input}
 }
 
 // parseHeadersFile parses an fff .headers file into an http.Header map.

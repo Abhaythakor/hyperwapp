@@ -63,17 +63,24 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 				
 				// FAST SKIP: Check resume log before doing anything else
 				if skipFunc != nil && skipFunc(uniqueID) {
-					outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
+					input := model.OfflineInputPool.Get().(*model.OfflineInput)
+					input.Reset()
+					input.Path = uniqueID
+					input.Skipped = true
+					outputCh <- *input
 					if err != nil { break }
 					continue
 				}
 
 				// Move the JSON parsing work into the channel
 				// We wrap the raw data in OfflineInput so the WORKERS handle the GJSON work.
-				outputCh <- model.OfflineInput{
-					Path:    uniqueID,
-					RawJSON: line, // New field to hold raw data for parallel processing
-				}
+				input := model.OfflineInputPool.Get().(*model.OfflineInput)
+				input.Reset()
+				input.Path = uniqueID
+				input.RawJSON = make([]byte, len(line))
+				copy(input.RawJSON, line) // Must copy because line is a reuse buffer
+				
+				outputCh <- *input
 			}
 			if err != nil {
 				break
@@ -89,14 +96,22 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 				if len(line) > 0 {
 					uniqueID := fmt.Sprintf("%s#R%d", path, lineNum)
 					if skipFunc != nil && skipFunc(uniqueID) {
-						outputCh <- model.OfflineInput{Path: uniqueID, Skipped: true}
+						input := model.OfflineInputPool.Get().(*model.OfflineInput)
+						input.Reset()
+						input.Path = uniqueID
+						input.Skipped = true
+						outputCh <- *input
 						if err != nil { break }
 						continue
 					}
-					outputCh <- model.OfflineInput{
-						Path:     uniqueID,
-						RawRegex: line, // New field
-					}
+					
+					input := model.OfflineInputPool.Get().(*model.OfflineInput)
+					input.Reset()
+					input.Path = uniqueID
+					input.RawRegex = make([]byte, len(line))
+					copy(input.RawRegex, line)
+
+					outputCh <- *input
 				}
 				if err != nil {
 					break
@@ -108,7 +123,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 			records := cc.RecordSep.Split(string(data), -1)
 			for _, record := range records {
 				if strings.TrimSpace(record) == "" { continue }
-				input := ExtractFromRegex(record, cc)
+				input := ExtractFromRegex([]byte(record), cc)
 				if input != nil { outputCh <- *input }
 			}
 		}
@@ -122,7 +137,9 @@ func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 		return nil
 	}
 
-	out := &model.OfflineInput{Headers: make(map[string][]string)}
+	out := model.OfflineInputPool.Get().(*model.OfflineInput)
+	out.Reset()
+
 	out.URL = res.Get(cfg.URLPath).String()
 	out.Domain = res.Get(cfg.DomainPath).String()
 	out.Body = []byte(res.Get(cfg.BodyPath).String())
@@ -151,29 +168,31 @@ func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 	return out
 }
 
-func ExtractFromRegex(record string, cc *CompiledConfig) *model.OfflineInput {
-	out := &model.OfflineInput{Headers: make(map[string][]string)}
+func ExtractFromRegex(record []byte, cc *CompiledConfig) *model.OfflineInput {
+	recordStr := string(record)
+	out := model.OfflineInputPool.Get().(*model.OfflineInput)
+	out.Reset()
 
 	if cc.URLRegex != nil {
-		m := cc.URLRegex.FindStringSubmatch(record)
+		m := cc.URLRegex.FindStringSubmatch(recordStr)
 		if len(m) > 1 {
 			out.URL = m[1]
 		}
 	}
 	if cc.DomainRegex != nil {
-		m := cc.DomainRegex.FindStringSubmatch(record)
+		m := cc.DomainRegex.FindStringSubmatch(recordStr)
 		if len(m) > 1 {
 			out.Domain = m[1]
 		}
 	}
 	if cc.BodyRegex != nil {
-		m := cc.BodyRegex.FindStringSubmatch(record)
+		m := cc.BodyRegex.FindStringSubmatch(recordStr)
 		if len(m) > 1 {
 			out.Body = []byte(m[1])
 		}
 	}
 	if cc.HeadersRegex != nil {
-		m := cc.HeadersRegex.FindStringSubmatch(record)
+		m := cc.HeadersRegex.FindStringSubmatch(recordStr)
 		if len(m) > 1 {
 			// Try parsing as JSON first, then as raw block
 			var hMap map[string]interface{}
@@ -201,6 +220,7 @@ func ExtractFromRegex(record string, cc *CompiledConfig) *model.OfflineInput {
 	}
 
 	if out.Domain == "" && out.URL == "" {
+		model.OfflineInputPool.Put(out)
 		return nil
 	}
 	return out

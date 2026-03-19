@@ -96,7 +96,11 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([]model.OfflineInput, error) {
 	// Fast check for single file
 	if skipFunc != nil && skipFunc(path) {
-		return []model.OfflineInput{{Path: path, Skipped: true}}, nil
+		input := model.OfflineInputPool.Get().(*model.OfflineInput)
+		input.Reset()
+		input.Path = path
+		input.Skipped = true
+		return []model.OfflineInput{*input}, nil
 	}
 
 	file, err := os.Open(path)
@@ -117,13 +121,16 @@ func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([
 	url := reconstructURLKatana(parts.RequestLine, requestHeaders, domain, parts.InitialURL)
 
 	util.Debug("Created Katana OfflineInput for URL: %s (Domain: %s)", url, domain)
-	return []model.OfflineInput{{
-		Domain:  domain,
-		URL:     url,
-		Headers: responseHeaders,
-		Body:    body,
-		Path:    path,
-	}}, nil
+	
+	input := model.OfflineInputPool.Get().(*model.OfflineInput)
+	input.Reset()
+	input.Domain = domain
+	input.URL = url
+	input.Headers = responseHeaders
+	input.Body = body
+	input.Path = path
+	
+	return []model.OfflineInput{*input}, nil
 }
 
 // katanaParts represents the split sections of a katana response file.

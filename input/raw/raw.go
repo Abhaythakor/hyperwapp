@@ -68,7 +68,11 @@ func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-c
 			uniquePath := fmt.Sprintf("%s#%d", path, index)
 
 			if skipFunc != nil && skipFunc(uniquePath) {
-				outputCh <- model.OfflineInput{Path: uniquePath, Skipped: true}
+				input := model.OfflineInputPool.Get().(*model.OfflineInput)
+				input.Reset()
+				input.Path = uniquePath
+				input.Skipped = true
+				outputCh <- *input
 				continue
 			}
 
@@ -76,13 +80,15 @@ func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-c
 			body := rawResp.Body
 			domain := http.ExtractHost(headers, "unknown")
 
-			outputCh <- model.OfflineInput{
-				Domain:  domain,
-				URL:     "",
-				Headers: headers,
-				Body:    body,
-				Path:    uniquePath,
-			}
+			input := model.OfflineInputPool.Get().(*model.OfflineInput)
+			input.Reset()
+			input.Domain = domain
+			input.URL = ""
+			input.Headers = headers
+			input.Body = body
+			input.Path = uniquePath
+
+			outputCh <- *input
 			util.Debug("Created Raw HTTP OfflineInput for Domain: %s (ID: %s)", domain, uniquePath)
 		}
 	}()

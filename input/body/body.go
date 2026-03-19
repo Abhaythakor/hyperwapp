@@ -35,7 +35,11 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 				if !d.IsDir() {
 					// FAST RESUME check
 					if skipFunc != nil && skipFunc(p) {
-						outputCh <- model.OfflineInput{Path: p, Skipped: true}
+						input := model.OfflineInputPool.Get().(*model.OfflineInput)
+						input.Reset()
+						input.Path = p
+						input.Skipped = true
+						outputCh <- *input
 						return nil
 					}
 					processSingleFile(p, outputCh)
@@ -45,7 +49,11 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 		} else {
 			// Single file check
 			if skipFunc != nil && skipFunc(path) {
-				outputCh <- model.OfflineInput{Path: path, Skipped: true}
+				input := model.OfflineInputPool.Get().(*model.OfflineInput)
+				input.Reset()
+				input.Path = path
+				input.Skipped = true
+				outputCh <- *input
 				return
 			}
 			processSingleFile(path, outputCh)
@@ -66,15 +74,15 @@ func processSingleFile(path string, outputCh chan<- model.OfflineInput) {
 		return
 	}
 
-	input := model.OfflineInput{
-		Domain:  inferDomain(path),
-		URL:     "",
-		Headers: make(map[string][]string),
-		Body:    body,
-		Path:    path, // Set source path
-	}
+	input := model.OfflineInputPool.Get().(*model.OfflineInput)
+	input.Reset()
+	input.Domain = inferDomain(path)
+	input.URL = ""
+	input.Body = body
+	input.Path = path
+	
 	util.Debug("Created Body-Only OfflineInput for file: %s (Domain: %s)", path, input.Domain)
-	outputCh <- input
+	outputCh <- *input
 }
 
 // inferDomain attempts to infer a domain from a file path.

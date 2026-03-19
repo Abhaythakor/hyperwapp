@@ -413,6 +413,7 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 				// Handle SKIPPED items (Resume)
 				if offInput.Skipped {
 					tracker.IncrementSuccess()
+					model.OfflineInputPool.Put(offInput) // Recycle even if skipped
 					continue
 				}
 
@@ -427,26 +428,27 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 
 				if resumeMgr.IsCompleted(id) {
 					tracker.IncrementSuccess()
+					model.OfflineInputPool.Put(offInput) // Recycle
 					continue
 				}
 
 				// PARALLEL EXTRACTION for Custom Configs
-				var currentInput model.OfflineInput = offInput
 				if customCfg != nil {
-					var extracted *model.OfflineInput
 					if len(offInput.RawJSON) > 0 {
-						extracted = custom.ExtractFromJSON(offInput.RawJSON, customCfg)
+						if extracted := custom.ExtractFromJSON(offInput.RawJSON, customCfg); extracted != nil {
+							// Update offInput with extracted data
+							offInput.Domain = extracted.Domain
+							offInput.URL = extracted.URL
+							offInput.Headers = extracted.Headers
+							offInput.Body = extracted.Body
+						}
 					} else if len(offInput.RawRegex) > 0 {
-						extracted = custom.ExtractFromRegex(string(offInput.RawRegex), customCfg)
-					}
-					
-					if extracted != nil {
-						currentInput = *extracted
-						currentInput.Path = offInput.Path // Keep original ID path
-					} else if len(offInput.RawJSON) > 0 || len(offInput.RawRegex) > 0 {
-						// Extraction failed but data was provided
-						tracker.IncrementError()
-						continue
+						if extracted := custom.ExtractFromRegex(offInput.RawRegex, customCfg); extracted != nil {
+							offInput.Domain = extracted.Domain
+							offInput.URL = extracted.URL
+							offInput.Headers = extracted.Headers
+							offInput.Body = extracted.Body
+						}
 					}
 				}
 
@@ -459,23 +461,27 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 				}
 
 				// HEAVY OPERATION: The Regex Engine (Shared engine)
-				detections, err := engine.Detect(currentInput.Headers, currentInput.Body, currentInputType)
+				detections, err := engine.Detect(offInput.Headers, offInput.Body, currentInputType)
 				if err != nil {
 					util.Warn("Failed: %s (%v)", id, err)
 					tracker.IncrementError()
+					model.OfflineInputPool.Put(offInput) // Recycle
 					continue
 				}
 
 				// Enrich Data
 				for i := range detections {
-					detections[i].Domain = currentInput.Domain
-					detections[i].URL = currentInput.URL
+					detections[i].Domain = offInput.Domain
+					detections[i].URL = offInput.URL
 				}
 
 				// Send results
 				resultChWorker <- detections
 				resumeMgr.MarkCompleted(id)
 				tracker.IncrementSuccess()
+
+				// RECYCLE the input object now that we are done with it
+				model.OfflineInputPool.Put(offInput)
 			}
 		}()
 	}
