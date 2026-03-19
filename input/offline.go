@@ -241,8 +241,8 @@ func isTargetFile(fileName string, format OfflineFormat) bool {
 }
 
 // ParseOffline dispatches the parsing to the correct handler based on detected format.
-func ParseOffline(path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput, 1000) // Buffer the bridge
+func ParseOffline(path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput, 1000) // Buffer the bridge
 
 	format := DetectOfflineFormat(path, customCfg != nil)
 	if format == FormatUnknown {
@@ -253,7 +253,7 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int, cust
 	go func() {
 		defer close(outputCh)
 
-		var inputSourceCh <-chan model.OfflineInput
+		var inputSourceCh <-chan *model.OfflineInput
 		var parseErr error
 
 		switch format {
@@ -264,10 +264,10 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int, cust
 		case FormatKatanaDir:
 			inputSourceCh, parseErr = katana.ParseKatanaDir(path, skipFunc, concurrency)
 		case FormatKatanaFile:
-			var inputs []model.OfflineInput
+			var inputs []*model.OfflineInput
 			inputs, parseErr = katana.ParseKatanaFile(path, "", skipFunc)
 			if parseErr == nil {
-				ch := make(chan model.OfflineInput, len(inputs))
+				ch := make(chan *model.OfflineInput, len(inputs))
 				for _, in := range inputs {
 					ch <- in
 				}

@@ -10,8 +10,8 @@ import (
 )
 
 // ParseBodyOnly parses a file or directory as raw body input.
-func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput)
 
 	if concurrency <= 0 {
 		concurrency = 1
@@ -39,7 +39,7 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 						input.Reset()
 						input.Path = p
 						input.Skipped = true
-						outputCh <- *input
+						outputCh <- input
 						return nil
 					}
 					processSingleFile(p, outputCh)
@@ -53,7 +53,7 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 				input.Reset()
 				input.Path = path
 				input.Skipped = true
-				outputCh <- *input
+				outputCh <- input
 				return
 			}
 			processSingleFile(path, outputCh)
@@ -63,7 +63,7 @@ func ParseBodyOnly(path string, skipFunc func(string) bool, concurrency int) (<-
 	return outputCh, nil
 }
 
-func processSingleFile(path string, outputCh chan<- model.OfflineInput) {
+func processSingleFile(path string, outputCh chan<- *model.OfflineInput) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		util.Warn("Failed to read body-only file %s: %v", path, err)
@@ -82,7 +82,7 @@ func processSingleFile(path string, outputCh chan<- model.OfflineInput) {
 	input.Path = path
 	
 	util.Debug("Created Body-Only OfflineInput for file: %s (Domain: %s)", path, input.Domain)
-	outputCh <- *input
+	outputCh <- input
 }
 
 // inferDomain attempts to infer a domain from a file path.

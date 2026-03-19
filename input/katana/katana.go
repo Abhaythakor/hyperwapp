@@ -25,8 +25,8 @@ func IsKatanaFileContent(data []byte) bool {
 }
 
 // ParseKatanaDir parses a katana output directory and returns a channel of OfflineInput.
-func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput)
 
 	if concurrency <= 0 {
 		concurrency = 1
@@ -93,14 +93,14 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 }
 
 // ParseKatanaFile parses a single katana response file and returns a slice of OfflineInput.
-func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([]model.OfflineInput, error) {
+func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([]*model.OfflineInput, error) {
 	// Fast check for single file
 	if skipFunc != nil && skipFunc(path) {
 		input := model.OfflineInputPool.Get().(*model.OfflineInput)
 		input.Reset()
 		input.Path = path
 		input.Skipped = true
-		return []model.OfflineInput{*input}, nil
+		return []*model.OfflineInput{input}, nil
 	}
 
 	file, err := os.Open(path)
@@ -130,7 +130,7 @@ func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([
 	input.Body = body
 	input.Path = path
 	
-	return []model.OfflineInput{*input}, nil
+	return []*model.OfflineInput{input}, nil
 }
 
 // katanaParts represents the split sections of a katana response file.

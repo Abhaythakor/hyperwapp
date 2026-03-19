@@ -45,8 +45,8 @@ func IsRawHTTPContent(data []byte) bool {
 }
 
 // ParseRawHTTP parses a file containing one or more raw HTTP responses.
-func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput)
 
 	go func() {
 		defer close(outputCh)
@@ -72,7 +72,7 @@ func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-c
 				input.Reset()
 				input.Path = uniquePath
 				input.Skipped = true
-				outputCh <- *input
+				outputCh <- input
 				continue
 			}
 
@@ -88,7 +88,7 @@ func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-c
 			input.Body = body
 			input.Path = uniquePath
 
-			outputCh <- *input
+			outputCh <- input
 			util.Debug("Created Raw HTTP OfflineInput for Domain: %s (ID: %s)", domain, uniquePath)
 		}
 	}()

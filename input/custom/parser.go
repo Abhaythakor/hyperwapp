@@ -15,8 +15,8 @@ import (
 )
 
 // ParseCustom handles parsing based on the YAML configuration.
-func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, concurrency int) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput)
 
 	go func() {
 		defer close(outputCh)
@@ -43,7 +43,7 @@ func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, co
 	return outputCh, nil
 }
 
-func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool) {
+func processCustomFile(path string, outputCh chan<- *model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool) {
 	file, err := os.Open(path)
 	if err != nil {
 		util.Warn("Failed to open file %s: %v", path, err)
@@ -67,7 +67,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 					input.Reset()
 					input.Path = uniqueID
 					input.Skipped = true
-					outputCh <- *input
+					outputCh <- input
 					if err != nil { break }
 					continue
 				}
@@ -80,7 +80,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 				input.RawJSON = make([]byte, len(line))
 				copy(input.RawJSON, line) // Must copy because line is a reuse buffer
 				
-				outputCh <- *input
+				outputCh <- input
 			}
 			if err != nil {
 				break
@@ -100,7 +100,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 						input.Reset()
 						input.Path = uniqueID
 						input.Skipped = true
-						outputCh <- *input
+						outputCh <- input
 						if err != nil { break }
 						continue
 					}
@@ -111,7 +111,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 					input.RawRegex = make([]byte, len(line))
 					copy(input.RawRegex, line)
 
-					outputCh <- *input
+					outputCh <- input
 				}
 				if err != nil {
 					break
@@ -124,7 +124,7 @@ func processCustomFile(path string, outputCh chan<- model.OfflineInput, cc *Comp
 			for _, record := range records {
 				if strings.TrimSpace(record) == "" { continue }
 				input := ExtractFromRegex([]byte(record), cc)
-				if input != nil { outputCh <- *input }
+				if input != nil { outputCh <- input }
 			}
 		}
 	}

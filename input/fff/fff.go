@@ -13,8 +13,8 @@ import (
 )
 
 // ParseFFF parses an fff directory structure and returns a channel of OfflineInput.
-func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInput, error) {
-	outputCh := make(chan model.OfflineInput)
+func ParseFFF(root string, skipFunc func(string) bool) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput)
 
 	go func() {
 		defer close(outputCh)
@@ -79,7 +79,7 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 								input.Reset()
 								input.Path = hPath
 								input.Skipped = true
-								outputCh <- *input
+								outputCh <- input
 								continue
 							}
 						} else if bPath, ok := files["body"]; ok {
@@ -88,7 +88,7 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 								input.Reset()
 								input.Path = bPath
 								input.Skipped = true
-								outputCh <- *input
+								outputCh <- input
 								continue
 							}
 						}
@@ -108,7 +108,7 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan model.OfflineInpu
 }
 
 // buildFFFInputsFromGroup constructs OfflineInput objects from a single grouped fff files map.
-func buildFFFInputsFromGroup(files map[string]string, root, domain string) []model.OfflineInput {
+func buildFFFInputsFromGroup(files map[string]string, root, domain string) []*model.OfflineInput {
 	input := model.OfflineInputPool.Get().(*model.OfflineInput)
 	input.Reset()
 
@@ -146,7 +146,7 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []mod
 	input.Path = sourcePath
 
 	util.Debug("Created FFF OfflineInput for URL: %s (Domain: %s)", url, domain)
-	return []model.OfflineInput{*input}
+	return []*model.OfflineInput{input}
 }
 
 // parseHeadersFile parses an fff .headers file into an http.Header map.

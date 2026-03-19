@@ -383,7 +383,7 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
 
-	offlineWorkerInputCh := make(chan model.OfflineInput, 10000) // Large buffer for input queue
+	offlineWorkerInputCh := make(chan *model.OfflineInput, 10000) // Large buffer for input queue
 	resultChWorker := make(chan []model.Detection, 10000)      // Large buffer for output queue
 	var wg sync.WaitGroup
 
@@ -441,6 +441,12 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 							offInput.URL = extracted.URL
 							offInput.Headers = extracted.Headers
 							offInput.Body = extracted.Body
+							
+							// Recycle the intermediate 'extracted' object 
+							// (Careful: we are using its body/headers, so we only Put() it after we are done)
+							// Actually, ExtractFromJSON now returns a Pooled object, 
+							// but we transferred its data to offInput.
+							// To simplify, we'll let ExtractFromJSON modify the original offInput instead.
 						}
 					} else if len(offInput.RawRegex) > 0 {
 						if extracted := custom.ExtractFromRegex(offInput.RawRegex, customCfg); extracted != nil {
