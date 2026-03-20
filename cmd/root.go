@@ -383,8 +383,8 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
 
-	offlineWorkerInputCh := make(chan *model.OfflineInput, 10000) // Large buffer for input queue
-	resultChWorker := make(chan []model.Detection, 10000)      // Large buffer for output queue
+	offlineWorkerInputCh := make(chan *model.OfflineInput, 2000) // Stable buffer for memory
+	resultChWorker := make(chan []model.Detection, 2000)
 	var wg sync.WaitGroup
 
 	numWorkers := concurrency
@@ -395,15 +395,12 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 	// 1. Start the Parser (Producer) in background
 	go func() {
 		defer close(offlineWorkerInputCh)
-		// The parser now just reads files and pushes to channel.
-		// It does NOT run detection. This is fast.
 		for offInput := range offlineInputCh {
 			offlineWorkerInputCh <- offInput
 		}
 	}()
 
 	// 2. Start the Workers (Consumers)
-	// These do the heavy CPU work (Wappalyzer regex)
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
@@ -413,22 +410,17 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 				// Handle SKIPPED items (Resume)
 				if offInput.Skipped {
 					tracker.IncrementSuccess()
-					model.OfflineInputPool.Put(offInput) // Recycle even if skipped
+					model.OfflineInputPool.Put(offInput)
 					continue
 				}
 
-				// Resume check (Double check for safety)
 				id := offInput.Path
-				if id == "" {
-					id = offInput.URL
-				}
-				if id == "" {
-					id = offInput.Domain
-				}
+				if id == "" { id = offInput.URL }
+				if id == "" { id = offInput.Domain }
 
 				if resumeMgr.IsCompleted(id) {
 					tracker.IncrementSuccess()
-					model.OfflineInputPool.Put(offInput) // Recycle
+					model.OfflineInputPool.Put(offInput)
 					continue
 				}
 
@@ -436,17 +428,13 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 				if customCfg != nil {
 					if len(offInput.RawJSON) > 0 {
 						if extracted := custom.ExtractFromJSON(offInput.RawJSON, customCfg); extracted != nil {
-							// Update offInput with extracted data
+							// Copy extracted data to our current object
 							offInput.Domain = extracted.Domain
 							offInput.URL = extracted.URL
 							offInput.Headers = extracted.Headers
 							offInput.Body = extracted.Body
-							
-							// Recycle the intermediate 'extracted' object 
-							// (Careful: we are using its body/headers, so we only Put() it after we are done)
-							// Actually, ExtractFromJSON now returns a Pooled object, 
-							// but we transferred its data to offInput.
-							// To simplify, we'll let ExtractFromJSON modify the original offInput instead.
+							// Recycle the temporary 'extracted' object immediately
+							model.OfflineInputPool.Put(extracted)
 						}
 					} else if len(offInput.RawRegex) > 0 {
 						if extracted := custom.ExtractFromRegex(offInput.RawRegex, customCfg); extracted != nil {
@@ -454,6 +442,7 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 							offInput.URL = extracted.URL
 							offInput.Headers = extracted.Headers
 							offInput.Body = extracted.Body
+							model.OfflineInputPool.Put(extracted)
 						}
 					}
 				}
@@ -466,27 +455,25 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 					currentInputType = model.SourceBodyOnly
 				}
 
-				// HEAVY OPERATION: The Regex Engine (Shared engine)
+				// HEAVY OPERATION: The Regex Engine
 				detections, err := engine.Detect(offInput.Headers, offInput.Body, currentInputType)
 				if err != nil {
 					util.Warn("Failed: %s (%v)", id, err)
 					tracker.IncrementError()
-					model.OfflineInputPool.Put(offInput) // Recycle
+					model.OfflineInputPool.Put(offInput)
 					continue
 				}
 
-				// Enrich Data
 				for i := range detections {
 					detections[i].Domain = offInput.Domain
 					detections[i].URL = offInput.URL
 				}
 
-				// Send results
 				resultChWorker <- detections
 				resumeMgr.MarkCompleted(id)
 				tracker.IncrementSuccess()
 
-				// RECYCLE the input object now that we are done with it
+				// RECYCLE
 				model.OfflineInputPool.Put(offInput)
 			}
 		}()
