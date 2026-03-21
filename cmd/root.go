@@ -427,23 +427,9 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 				// PARALLEL EXTRACTION for Custom Configs
 				if customCfg != nil {
 					if len(offInput.RawJSON) > 0 {
-						if extracted := custom.ExtractFromJSON(offInput.RawJSON, customCfg); extracted != nil {
-							// Copy extracted data to our current object
-							offInput.Domain = extracted.Domain
-							offInput.URL = extracted.URL
-							offInput.Headers = extracted.Headers
-							offInput.Body = extracted.Body
-							// Recycle the temporary 'extracted' object immediately
-							model.OfflineInputPool.Put(extracted)
-						}
+						custom.PopulateFromJSON(offInput.RawJSON, offInput, customCfg)
 					} else if len(offInput.RawRegex) > 0 {
-						if extracted := custom.ExtractFromRegex(offInput.RawRegex, customCfg); extracted != nil {
-							offInput.Domain = extracted.Domain
-							offInput.URL = extracted.URL
-							offInput.Headers = extracted.Headers
-							offInput.Body = extracted.Body
-							model.OfflineInputPool.Put(extracted)
-						}
+						custom.PopulateFromRegex(offInput.RawRegex, offInput, customCfg)
 					}
 				}
 

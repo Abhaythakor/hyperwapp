@@ -123,28 +123,27 @@ func processCustomFile(path string, outputCh chan<- *model.OfflineInput, cc *Com
 			records := cc.RecordSep.Split(string(data), -1)
 			for _, record := range records {
 				if strings.TrimSpace(record) == "" { continue }
-				input := ExtractFromRegex([]byte(record), cc)
-				if input != nil { outputCh <- input }
+				input := model.OfflineInputPool.Get().(*model.OfflineInput)
+				input.Reset()
+				PopulateFromRegex([]byte(record), input, cc)
+				outputCh <- input
 			}
 		}
 	}
 }
 
-func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
+func PopulateFromJSON(data []byte, out *model.OfflineInput, cc *CompiledConfig) {
 	cfg := cc.Config.JSON
 	res := gjson.ParseBytes(data)
 	if !res.IsObject() {
-		return nil
+		return
 	}
-
-	out := model.OfflineInputPool.Get().(*model.OfflineInput)
-	out.Reset()
 
 	out.URL = res.Get(cfg.URLPath).String()
 	out.Domain = res.Get(cfg.DomainPath).String()
 	out.Body = []byte(res.Get(cfg.BodyPath).String())
 
-	// Headers (optimized extraction)
+	// Headers (populate existing map)
 	if cfg.HeadersPath != "" {
 		res.Get(cfg.HeadersPath).ForEach(func(key, value gjson.Result) bool {
 			k := key.String()
@@ -164,14 +163,10 @@ func ExtractFromJSON(data []byte, cc *CompiledConfig) *model.OfflineInput {
 			out.Domain = u.Hostname()
 		}
 	}
-
-	return out
 }
 
-func ExtractFromRegex(record []byte, cc *CompiledConfig) *model.OfflineInput {
+func PopulateFromRegex(record []byte, out *model.OfflineInput, cc *CompiledConfig) {
 	recordStr := string(record)
-	out := model.OfflineInputPool.Get().(*model.OfflineInput)
-	out.Reset()
 
 	if cc.URLRegex != nil {
 		m := cc.URLRegex.FindStringSubmatch(recordStr)
@@ -218,10 +213,4 @@ func ExtractFromRegex(record []byte, cc *CompiledConfig) *model.OfflineInput {
 			out.Domain = u.Hostname()
 		}
 	}
-
-	if out.Domain == "" && out.URL == "" {
-		model.OfflineInputPool.Put(out)
-		return nil
-	}
-	return out
 }
