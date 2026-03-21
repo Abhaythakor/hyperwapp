@@ -162,7 +162,6 @@ func (t *Tracker) printProgress(force bool) {
 	total := t.total.Load()
 	completed := t.completed.Load()
 	success := t.success.Load()
-	errors := t.errors.Load()
 	finalized := t.finalized.Load()
 	elapsed := time.Since(t.startTime)
 
@@ -183,16 +182,15 @@ func (t *Tracker) printProgress(force bool) {
 			percent = fmt.Sprintf("%.1f%%", p)
 		}
 
-		// Shorter version to prevent line wrapping on small screens
-		progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.1f/s | %s",
+		// Ultra-short version for Termux/Mobile to prevent wrapping
+		progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | %.0f/s | %s",
 			t.color.Cyan(percent),
 			completed, total,
 			t.color.Green(fmt.Sprintf("%d", success)),
-			t.color.Red(fmt.Sprintf("%d", errors)),
 			rps,
 			elapsed.Round(time.Second))
 	}
 
-	// ANSI: Clear line from cursor to end (K), and use \r to return to start.
-	fmt.Fprintf(os.Stderr, "\r\033[K%s", progressLine)
+	// Move cursor to start (\r), clear entire line (2K), then print
+	fmt.Fprintf(os.Stderr, "\r\033[2K%s", progressLine)
 }

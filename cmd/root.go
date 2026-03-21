@@ -384,7 +384,7 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 	}
 
 	offlineWorkerInputCh := make(chan *model.OfflineInput, 2000) // Stable buffer for memory
-	resultChWorker := make(chan []model.Detection, 2000)
+	resultChWorker := make(chan []model.Detection, 5000)      // Increased cushion for slow disks
 	var wg sync.WaitGroup
 
 	numWorkers := concurrency
