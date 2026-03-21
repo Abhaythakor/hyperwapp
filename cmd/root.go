@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -48,6 +49,7 @@ var (
 	resume       bool
 	update       bool
 	showVersion  bool
+	showNuclei   bool // Added for nuclei bridge
 
 	wappalyzerEngine *detect.WappalyzerEngine
 )
@@ -253,10 +255,25 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 		}
 	}
 
+	var allNucleiTags []string
+	tagMap := make(map[string]struct{})
+
 	// High-speed result processing loop
 	for detections := range resultCh {
 		if detections == nil {
 			continue
+		}
+
+		// Map to Nuclei Tags
+		for i := range detections {
+			tag := detect.MapToNucleiTag(detections[i].Technology)
+			if tag != "" {
+				detections[i].NucleiTags = []string{tag}
+				if _, exists := tagMap[tag]; !exists {
+					tagMap[tag] = struct{}{}
+					allNucleiTags = append(allNucleiTags, tag)
+				}
+			}
 		}
 
 		// Only print to CLI if NOT silent and we have technologies
@@ -265,8 +282,6 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 			if err := cliWriter.Write(detections); err != nil {
 				util.Warn("Error writing to CLI: %v", err)
 			}
-			// Note: tracker.Refresh() is now handled by a background timer 
-			// but we can force it here for better interactivity if needed.
 		}
 
 		if fileWriter != nil {
@@ -277,6 +292,14 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 	}
 
 	tracker.Done()
+
+	// If --nuclei is set, print the bridge summary
+	if showNuclei && len(allNucleiTags) > 0 {
+		color := util.NewColorizer(!disableColor)
+		fmt.Printf("\n[+] %s: %s\n", color.Cyan("Discovered Nuclei Tags"), strings.Join(allNucleiTags, ", "))
+		fmt.Printf("[>] %s: nuclei -l targets.txt -tags %s\n\n", color.Yellow("Run Nuclei"), strings.Join(allNucleiTags, ","))
+	}
+
 	cliWriter.Close()
 	if fileWriter != nil {
 		fileWriter.Close()
@@ -603,4 +626,5 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&resume, "resume", false, "Resume an interrupted scan using .HyperWapp.resume checkpoint")
 	rootCmd.PersistentFlags().BoolVar(&update, "update", false, "Update Wappalyzer fingerprints from ProjectDiscovery GitHub")
 	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "Show tool version and fingerprints information")
+	rootCmd.PersistentFlags().BoolVar(&showNuclei, "nuclei", false, "Generate Nuclei tags and recommended scan command")
 }

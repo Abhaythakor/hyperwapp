@@ -49,6 +49,7 @@ type Detection struct {
 	Domain     string    `json:"domain" csv:"domain"`         // example.com
 	URL        string    `json:"url" csv:"url"`               // https://example.com
 	Technology string    `json:"technology" csv:"technology"` // React, Cloudflare, Apache
+	NucleiTags []string  `json:"nuclei_tags,omitempty" csv:"nuclei_tags,omitempty"` // wordpress, php, etc
 	Source     string    `json:"source" csv:"source"`         // wappalyzer
 	Path       string    `json:"path" csv:"path"`             // fingerprint
 	Evidence   string    `json:"evidence" csv:"evidence"`     // wappalyzergo
