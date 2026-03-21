@@ -24,6 +24,7 @@ type Tracker struct {
 	finalized  atomic.Bool // Tracks if discovery is finished
 	stopChan   chan struct{}
 	isLogMode  bool // True for Termux or non-interactive terminals
+	lastLog    time.Time
 }
 
 // NewTracker creates a new progress tracker.
@@ -31,6 +32,7 @@ func NewTracker(total uint32, quiet, colorize bool) *Tracker {
 	t := &Tracker{
 		startTime:  time.Now(),
 		lastUpdate: time.Now(),
+		lastLog:    time.Now(),
 		quiet:      quiet,
 		enabled:    !quiet,
 		color:      util.NewColorizer(colorize),
@@ -206,9 +208,11 @@ func (t *Tracker) printProgress(force bool) {
 	}
 
 	if t.isLogMode {
-		// Only print Log Mode periodically to avoid spamming
-		if force || completed%100 == 0 || completed == total {
+		// Print every 20 units OR every 2 seconds to keep it interactive
+		now := time.Now()
+		if force || completed%20 == 0 || completed == total || now.Sub(t.lastLog) > 2*time.Second {
 			fmt.Fprintf(os.Stderr, "%s\n", progressLine)
+			t.lastLog = now
 		}
 	} else {
 		// ANSI: Clear entire line (2K) and return to start (\r)
