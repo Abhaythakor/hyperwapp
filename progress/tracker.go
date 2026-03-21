@@ -50,7 +50,7 @@ func NewTracker(total uint32, quiet, colorize bool) *Tracker {
 }
 
 func (t *Tracker) refreshLoop() {
-	ticker := time.NewTicker(150 * time.Millisecond) // Refresh UI at 6Hz
+	ticker := time.NewTicker(250 * time.Millisecond) // Refresh UI at 4Hz (Saves CPU)
 	defer ticker.Stop()
 
 	for {
@@ -153,8 +153,8 @@ func (t *Tracker) printProgress(force bool) {
 		return
 	}
 
-	// Throttle to 15 updates per second
-	if !force && time.Since(t.lastUpdate) < (time.Second/15) {
+	// Throttle UI updates to save CPU power (Max 5 updates per second)
+	if !force && time.Since(t.lastUpdate) < (200 * time.Millisecond) {
 		return
 	}
 	t.lastUpdate = time.Now()
@@ -169,22 +169,22 @@ func (t *Tracker) printProgress(force bool) {
 	var progressLine string
 	if !finalized {
 		// Discovery Phase UI
-		progressLine = fmt.Sprintf("[+] Discovering targets: %s...", t.color.Yellow(fmt.Sprintf("%d", total)))
+		progressLine = fmt.Sprintf("[+] Discovering: %s...", t.color.Yellow(fmt.Sprintf("%d", total)))
 	} else {
-		// Scanning Phase UI - Persistent Footer
+		// Scanning Phase UI - Compact for Termux/Mobile
 		rps := 0.0
 		if elapsed.Seconds() > 0 {
 			rps = float64(completed) / elapsed.Seconds()
 		}
 
-		// Calculate percentage if total is known
-		percent := ""
+		percent := "0.0%"
 		if total > 0 {
 			p := float64(completed) / float64(total) * 100
 			percent = fmt.Sprintf("%.1f%%", p)
 		}
 
-		progressLine = fmt.Sprintf("[+] %s | Processed: %d/%d | Success: %s | Errors: %s | Speed: %.2f/s | Time: %s",
+		// Shorter version to prevent line wrapping on small screens
+		progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.1f/s | %s",
 			t.color.Cyan(percent),
 			completed, total,
 			t.color.Green(fmt.Sprintf("%d", success)),
@@ -193,6 +193,6 @@ func (t *Tracker) printProgress(force bool) {
 			elapsed.Round(time.Second))
 	}
 
-	// ANSI escape code to clear the current line (2K) and move cursor to beginning (\r)
-	fmt.Fprintf(os.Stderr, "\033[2K\r%s", progressLine)
+	// ANSI: Clear line from cursor to end (K), and use \r to return to start.
+	fmt.Fprintf(os.Stderr, "\r\033[K%s", progressLine)
 }
