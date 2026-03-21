@@ -23,6 +23,7 @@ type Tracker struct {
 	started    bool
 	finalized  atomic.Bool // Tracks if discovery is finished
 	stopChan   chan struct{}
+	isLogMode  bool // True for Termux or non-interactive terminals
 }
 
 // NewTracker creates a new progress tracker.
@@ -34,6 +35,7 @@ func NewTracker(total uint32, quiet, colorize bool) *Tracker {
 		enabled:    !quiet,
 		color:      util.NewColorizer(colorize),
 		stopChan:   make(chan struct{}),
+		isLogMode:  os.Getenv("TERMUX_VERSION") != "" || os.Getenv("TERM") == "dumb",
 	}
 	t.total.Store(total)
 	if total > 0 {
@@ -72,7 +74,11 @@ func (t *Tracker) FinalizeTotal() {
 	}
 	t.finalized.Store(true)
 	t.startTime = time.Now()           // Reset timer for scanning phase
-	fmt.Fprintf(os.Stderr, " Done.\n") // Finish the discovery line and move to next
+	if t.isLogMode {
+		fmt.Fprintf(os.Stderr, "[+] Discovery Done.\n")
+	} else {
+		fmt.Fprintf(os.Stderr, " Done.\n")
+	}
 }
 
 // IncrementSuccess records a successful scan.
@@ -126,7 +132,7 @@ func (t *Tracker) Done() {
 	close(t.stopChan) // Stop refresh loop
 
 	// Clear the progress line before printing final summary.
-	if t.started {
+	if t.started && !t.isLogMode {
 		t.Clear()
 	}
 
@@ -142,8 +148,8 @@ func (t *Tracker) Done() {
 
 // Clear clears the progress line.
 func (t *Tracker) Clear() {
-	if t.enabled {
-		fmt.Fprintf(os.Stderr, "\033[2K\r") // Clear the line
+	if t.enabled && !t.isLogMode {
+		fmt.Fprintf(os.Stderr, "\r\033[2K") // Clear the line
 	}
 }
 
@@ -162,6 +168,7 @@ func (t *Tracker) printProgress(force bool) {
 	total := t.total.Load()
 	completed := t.completed.Load()
 	success := t.success.Load()
+	errors := t.errors.Load()
 	finalized := t.finalized.Load()
 	elapsed := time.Since(t.startTime)
 
@@ -170,7 +177,7 @@ func (t *Tracker) printProgress(force bool) {
 		// Discovery Phase UI
 		progressLine = fmt.Sprintf("[+] Discovering: %s...", t.color.Yellow(fmt.Sprintf("%d", total)))
 	} else {
-		// Scanning Phase UI - Compact for Termux/Mobile
+		// Scanning Phase UI
 		rps := 0.0
 		if elapsed.Seconds() > 0 {
 			rps = float64(completed) / elapsed.Seconds()
@@ -182,15 +189,29 @@ func (t *Tracker) printProgress(force bool) {
 			percent = fmt.Sprintf("%.1f%%", p)
 		}
 
-		// Ultra-short version for Termux/Mobile to prevent wrapping
-		progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | %.0f/s | %s",
-			t.color.Cyan(percent),
-			completed, total,
-			t.color.Green(fmt.Sprintf("%d", success)),
-			rps,
-			elapsed.Round(time.Second))
+		if t.isLogMode {
+			// Clean log-style output for Termux
+			progressLine = fmt.Sprintf("[+] %s | Processed: %d/%d | Success: %d | Errors: %d | %.1f/s",
+				percent, completed, total, success, errors, rps)
+		} else {
+			// Compact PC version
+			progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.0f/s | %s",
+				t.color.Cyan(percent),
+				completed, total,
+				t.color.Green(fmt.Sprintf("%d", success)),
+				t.color.Red(fmt.Sprintf("%d", errors)),
+				rps,
+				elapsed.Round(time.Second))
+		}
 	}
 
-	// Move cursor to start (\r), clear entire line (2K), then print
-	fmt.Fprintf(os.Stderr, "\r\033[2K%s", progressLine)
+	if t.isLogMode {
+		// Only print Log Mode periodically to avoid spamming
+		if force || completed%100 == 0 || completed == total {
+			fmt.Fprintf(os.Stderr, "%s\n", progressLine)
+		}
+	} else {
+		// ANSI: Clear entire line (2K) and return to start (\r)
+		fmt.Fprintf(os.Stderr, "\r\033[2K%s", progressLine)
+	}
 }
