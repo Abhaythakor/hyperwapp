@@ -1,13 +1,54 @@
 package detect
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+
+	"github.com/Abhaythakor/hyperwapp/util"
 )
 
 var (
-	// Manual overrides for technologies that don't follow the slug pattern
-	nucleiManualMap = map[string]string{
+	// Manual overrides and loaded JSON map
+	nucleiMap   = make(map[string]string)
+	mapMutex    sync.RWMutex
+	mapLoaded   bool
+	nonAlphaRegex = regexp.MustCompile(`[^a-z0-9]+`)
+)
+
+// LoadNucleiMap loads the mapping from a JSON file.
+func LoadNucleiMap() {
+	mapMutex.Lock()
+	defer mapMutex.Unlock()
+
+	if mapLoaded {
+		return
+	}
+
+	// Try to find nuclei-map.json in the executable directory or current directory
+	exePath, _ := os.Executable()
+	paths := []string{
+		filepath.Join(filepath.Dir(exePath), "nuclei-map.json"),
+		"nuclei-map.json",
+	}
+
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			err = json.Unmarshal(data, &nucleiMap)
+			if err == nil {
+				util.Debug("Loaded Nuclei mapping from %s", p)
+				mapLoaded = true
+				return
+			}
+		}
+	}
+
+	// Fallback hardcoded defaults if file not found
+	nucleiMap = map[string]string{
 		"Amazon Web Services": "aws",
 		"Google Cloud":        "gcp",
 		"Microsoft Azure":     "azure",
@@ -19,32 +60,31 @@ var (
 		"Node.js":             "nodejs",
 		"Vue.js":              "vue",
 		"React.js":            "react",
+		"WordPress":           "wordpress",
 	}
-
-	nonAlphaRegex = regexp.MustCompile(`[^a-z0-9]+`)
-)
+	mapLoaded = true
+}
 
 // MapToNucleiTag converts a Wappalyzer technology name to a Nuclei-compatible tag.
 func MapToNucleiTag(tech string) string {
-	// 1. Check manual map first
-	if tag, ok := nucleiManualMap[tech]; ok {
+	if !mapLoaded {
+		LoadNucleiMap()
+	}
+
+	mapMutex.RLock()
+	tag, ok := nucleiMap[tech]
+	mapMutex.RUnlock()
+
+	if ok {
 		return tag
 	}
 
-	// 2. Smart Slugifier:
-	// "WordPress" -> "wordpress"
-	// "PHP 7.4" -> "php"
-	// "Google Analytics" -> "google-analytics"
-	
-	tag := strings.ToLower(tech)
-	
-	// Remove version numbers (e.g., "php 7.4" -> "php ")
+	// Smart Slugifier (Fallback)
+	tag = strings.ToLower(tech)
 	versionIdx := strings.IndexAny(tag, "0123456789")
 	if versionIdx > 0 {
 		tag = tag[:versionIdx]
 	}
-
-	// Clean special characters and trim
 	tag = strings.TrimSpace(tag)
 	tag = nonAlphaRegex.ReplaceAllString(tag, "-")
 	tag = strings.Trim(tag, "-")
