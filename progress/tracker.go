@@ -134,7 +134,7 @@ func (t *Tracker) Done() {
 	close(t.stopChan) // Stop refresh loop
 
 	// Clear the progress line before printing final summary.
-	if t.started && !t.isLogMode {
+	if t.started {
 		t.Clear()
 	}
 
@@ -143,15 +143,16 @@ func (t *Tracker) Done() {
 	errors := t.errors.Load()
 	elapsed := time.Since(t.startTime).Round(time.Second)
 
-	// Final summary in the same style as scanning
-	fmt.Fprintf(os.Stderr, "[+] Scan Finished: Processed %d targets in %s (Success: %d, Errors: %d)\n",
+	// Final summary
+	fmt.Fprintf(os.Stderr, "[+] Scan Finished: %d targets in %s (S:%d, E:%d)\n",
 		completed, elapsed, success, errors)
 }
 
-// Clear clears the progress line.
+// Clear clears the progress line completely.
 func (t *Tracker) Clear() {
-	if t.enabled && !t.isLogMode {
-		fmt.Fprintf(os.Stderr, "\r\033[2K") // Clear the line
+	if t.enabled {
+		// ANSI: Move to start (\r), Clear entire line (2K)
+		fmt.Fprintf(os.Stderr, "\r\033[2K")
 	}
 }
 
@@ -161,8 +162,8 @@ func (t *Tracker) printProgress(force bool) {
 		return
 	}
 
-	// Throttle UI updates to save CPU power (Max 5 updates per second)
-	if !force && time.Since(t.lastUpdate) < (200 * time.Millisecond) {
+	// Throttle UI updates (Max 4 updates per second)
+	if !force && time.Since(t.lastUpdate) < (250 * time.Millisecond) {
 		return
 	}
 	t.lastUpdate = time.Now()
@@ -176,10 +177,8 @@ func (t *Tracker) printProgress(force bool) {
 
 	var progressLine string
 	if !finalized {
-		// Discovery Phase UI
-		progressLine = fmt.Sprintf("[+] Discovering: %s...", t.color.Yellow(fmt.Sprintf("%d", total)))
+		progressLine = fmt.Sprintf("[+] Discovering: %d...", total)
 	} else {
-		// Scanning Phase UI
 		rps := 0.0
 		if elapsed.Seconds() > 0 {
 			rps = float64(completed) / elapsed.Seconds()
@@ -187,16 +186,16 @@ func (t *Tracker) printProgress(force bool) {
 
 		percent := "0.0%"
 		if total > 0 {
-			p := float64(completed) / float64(total) * 100
-			percent = fmt.Sprintf("%.1f%%", p)
+			percent = fmt.Sprintf("%.0f%%", float64(completed)/float64(total)*100)
 		}
 
 		if t.isLogMode {
-			// Clean log-style output for Termux
-			progressLine = fmt.Sprintf("[+] %s | Processed: %d/%d | Success: %d | Errors: %d | %.1f/s",
-				percent, completed, total, success, errors, rps)
+			// ULTRA-MINI Bar for Termux (Fits on any phone, no wrap = no duplicates)
+			// Format: [+] 32% | 6037/18797 | 1201/s
+			progressLine = fmt.Sprintf("[+] %s | %d/%d | %.0f/s", 
+				percent, completed, total, rps)
 		} else {
-			// Compact PC version
+			// Standard PC Bar
 			progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.0f/s | %s",
 				t.color.Cyan(percent),
 				completed, total,
@@ -207,15 +206,7 @@ func (t *Tracker) printProgress(force bool) {
 		}
 	}
 
-	if t.isLogMode {
-		// Print every 20 units OR every 2 seconds to keep it interactive
-		now := time.Now()
-		if force || completed%20 == 0 || completed == total || now.Sub(t.lastLog) > 2*time.Second {
-			fmt.Fprintf(os.Stderr, "%s\n", progressLine)
-			t.lastLog = now
-		}
-	} else {
-		// ANSI: Clear entire line (2K) and return to start (\r)
-		fmt.Fprintf(os.Stderr, "\r\033[2K%s", progressLine)
-	}
+	// ALWAYS use \r\033[2K to update in-place. 
+	// The Ultra-Mini bar prevents the wrapping that was breaking Termux before.
+	fmt.Fprintf(os.Stderr, "\r\033[2K%s", progressLine)
 }
