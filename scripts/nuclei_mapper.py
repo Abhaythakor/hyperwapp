@@ -2,72 +2,108 @@ import json
 import requests
 import re
 import os
+import hashlib
 
-# URLs for latest data
+# URLs
 WAPPALYZER_URL = "https://raw.githubusercontent.com/projectdiscovery/wappalyzergo/master/fingerprints_data.json"
 NUCLEI_TEMPLATES_URL = "https://api.github.com/repos/projectdiscovery/nuclei-templates/git/trees/main?recursive=1"
 
+MAP_FILE = "nuclei-map.json"
+STATE_FILE = ".mapper_state.json"
+
 def get_wappalyzer_techs():
-    print("[*] Fetching Wappalyzer technologies...")
     resp = requests.get(WAPPALYZER_URL)
     data = resp.json()
-    # The actual PD format uses the 'apps' key
-    if "apps" in data:
-        return list(data["apps"].keys())
-    return []
+    return list(data.get("apps", {}).keys())
 
 def get_nuclei_tags():
-    print("[*] Fetching Nuclei template paths...")
-    # This is a proxy for tags, we'll extract names from template paths
     resp = requests.get(NUCLEI_TEMPLATES_URL)
     data = resp.json()
     tags = set()
     for item in data.get("tree", []):
         path = item.get("path", "")
         if path.endswith(".yaml"):
-            # Extract directory names as tags (e.g., technologies/wordpress/...)
             parts = path.split("/")
-            if len(parts) > 1:
-                tags.add(parts[-2])
-            # Also extract from filename if it's in a relevant category
+            if len(parts) > 1: tags.add(parts[-2])
             filename = parts[-1].replace(".yaml", "")
             tags.add(filename.split("-")[0])
     return sorted(list(tags))
 
-def generate_map(wapp_techs, nuclei_tags):
-    print(f"[*] Analyzing {len(wapp_techs)} techs and {len(nuclei_tags)} potential tags...")
+def main():
+    # 1. Load Current Map
     mapping = {}
-    
-    # Simple matching logic (to be reviewed by user/AI)
-    for tech in wapp_techs:
+    if os.path.exists(MAP_FILE):
+        with open(MAP_FILE, "r") as f:
+            mapping = json.load(f)
+
+    # 2. Load Last State
+    state = {"techs": [], "tags": []}
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            state = json.load(f)
+
+    # 3. Fetch New Data
+    print("[*] Checking for updates...")
+    current_techs = get_wappalyzer_techs()
+    current_tags = get_nuclei_tags()
+
+    # 4. Find Diffs
+    new_techs = set(current_techs) - set(state["techs"])
+    removed_techs = set(state["techs"]) - set(current_techs)
+    new_tags = set(current_tags) - set(state["tags"])
+
+    if not new_techs and not new_tags and not removed_techs:
+        print("[+] Everything is up to date! No changes found.")
+        return
+
+    print(f"[!] Changes detected:")
+    if new_techs: print(f"    - New Techs: {len(new_techs)}")
+    if new_tags: print(f"    - New Tags: {len(new_tags)}")
+    if removed_techs: print(f"    - Removed Techs: {len(removed_techs)}")
+
+    # 5. Handle removals
+    for tech in removed_techs:
+        if tech in mapping:
+            del mapping[tech]
+
+    # 6. Attempt auto-mapping for new techs
+    pending_review = []
+    for tech in new_techs:
         slug = tech.lower().replace(".js", "").replace(" ", "-")
         slug = re.sub(r'[^a-z0-9\-]', '', slug)
         
-        # Check if slug exists in nuclei tags
-        if slug in nuclei_tags:
+        if slug in current_tags:
             mapping[tech] = slug
-        elif slug.split("-")[0] in nuclei_tags:
+        elif slug.split("-")[0] in current_tags:
             mapping[tech] = slug.split("-")[0]
-            
-    return mapping
+        else:
+            pending_review.append(tech)
 
-def main():
-    try:
-        wapp_techs = get_wappalyzer_techs()
-        nuclei_tags = get_nuclei_tags()
-        
-        mapping = generate_map(wapp_techs, nuclei_tags)
-        
-        output_file = "nuclei-map.json"
-        with open(output_file, "w") as f:
-            json.dump(mapping, f, indent=4)
-            
-        print(f"[+] Successfully generated {len(mapping)} mappings!")
-        print(f"[+] File saved to: {output_file}")
-        print("[!] Tip: You can now review this JSON and ask Gemini to improve specific entries.")
-        
-    except Exception as e:
-        print(f"[!] Error: {e}")
+    # 7. Save Results
+    with open(MAP_FILE, "w") as f:
+        json.dump(mapping, f, indent=4, sort_keys=True)
+    
+    with open(STATE_FILE, "w") as f:
+        json.dump({"techs": current_techs, "tags": current_tags}, f)
+
+    print(f"\n[+] Mapping updated. Total mappings: {len(mapping)}")
+    
+    if pending_review:
+        print(f"\n[?] {len(pending_review)} new techs need AI review.")
+        print("[>] Run this command to see the list for Gemini:")
+        print("    python3 scripts/nuclei_mapper.py --list-new")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--list-new" in sys.argv:
+        if os.path.exists(STATE_FILE) and os.path.exists(MAP_FILE):
+            with open(STATE_FILE, "r") as f: state = json.load(f)
+            with open(MAP_FILE, "r") as f: mapping = json.load(f)
+            new_but_unmapped = [t for t in get_wappalyzer_techs() if t not in mapping]
+            print("\n--- NEW TECHS FOR AI REVIEW ---")
+            print(json.dumps(new_but_unmapped, indent=2))
+            print("------------------------------")
+        else:
+            print("[!] Run the script without flags first to establish state.")
+    else:
+        main()
