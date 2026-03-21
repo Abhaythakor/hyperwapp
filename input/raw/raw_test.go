@@ -16,7 +16,7 @@ func TestParseRawHTTPSingleResponse(t *testing.T) {
 		t.Fatalf("ParseRawHTTP failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -52,7 +52,7 @@ func TestParseRawHTTPMultipleResponses(t *testing.T) {
 		t.Fatalf("ParseRawHTTP failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -88,7 +88,7 @@ func TestParseRawHTTPMalformed(t *testing.T) {
 		t.Fatalf("ParseRawHTTP should not return an error for malformed content, got: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}

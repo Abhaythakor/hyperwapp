@@ -16,7 +16,7 @@ func TestParseBodyOnlyHTML(t *testing.T) {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -48,7 +48,7 @@ func TestParseBodyOnlyJS(t *testing.T) {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -74,7 +74,7 @@ func TestParseBodyOnlyCSS(t *testing.T) {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}

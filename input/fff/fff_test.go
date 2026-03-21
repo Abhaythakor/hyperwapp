@@ -16,7 +16,7 @@ func TestParseFFFBasic(t *testing.T) {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -51,7 +51,7 @@ func TestParseFFFHeadersOnly(t *testing.T) {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -81,7 +81,7 @@ func TestParseFFFBodyOnly(t *testing.T) {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
@@ -108,7 +108,7 @@ func TestParseFFFMultiDomain(t *testing.T) {
 		t.Fatalf("ParseFFF failed: %v", err)
 	}
 
-	var inputs []model.OfflineInput
+	var inputs []*model.OfflineInput
 	for in := range inputsCh {
 		inputs = append(inputs, in)
 	}
