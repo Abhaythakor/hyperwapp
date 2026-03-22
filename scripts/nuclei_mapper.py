@@ -2,7 +2,7 @@ import json
 import requests
 import re
 import os
-import hashlib
+import sys
 
 # URLs
 WAPPALYZER_URL = "https://raw.githubusercontent.com/projectdiscovery/wappalyzergo/master/fingerprints_data.json"
@@ -11,23 +11,26 @@ NUCLEI_TEMPLATES_URL = "https://api.github.com/repos/projectdiscovery/nuclei-tem
 MAP_FILE = "nuclei-map.json"
 STATE_FILE = ".mapper_state.json"
 
-def get_wappalyzer_techs():
-    resp = requests.get(WAPPALYZER_URL)
-    data = resp.json()
-    return list(data.get("apps", {}).keys())
-
-def get_nuclei_tags():
-    resp = requests.get(NUCLEI_TEMPLATES_URL)
-    data = resp.json()
-    tags = set()
-    for item in data.get("tree", []):
-        path = item.get("path", "")
-        if path.endswith(".yaml"):
-            parts = path.split("/")
-            if len(parts) > 1: tags.add(parts[-2])
-            filename = parts[-1].replace(".yaml", "")
-            tags.add(filename.split("-")[0])
-    return sorted(list(tags))
+def fetch_current():
+    print("[*] Fetching latest Wappalyzer and Nuclei data...")
+    wapp_resp = requests.get(WAPPALYZER_URL).json()
+    wapp = wapp_resp.get('apps', {}).keys()
+    
+    nuclei = set()
+    n_data = requests.get(NUCLEI_TEMPLATES_URL).json().get('tree', [])
+    for item in n_data:
+        path = item.get('path', '').lower()
+        if path.endswith('.yaml'):
+            parts = path.split('/')
+            # Folders
+            for p in parts[:-1]: 
+                if len(p) > 2: nuclei.add(p)
+            # File ID prefix
+            filename = parts[-1].replace('.yaml', '')
+            prefix = filename.split('-')[0]
+            if len(prefix) > 2: nuclei.add(prefix)
+            
+    return set(wapp), nuclei
 
 def main():
     # 1. Load Current Map
@@ -43,67 +46,42 @@ def main():
             state = json.load(f)
 
     # 3. Fetch New Data
-    print("[*] Checking for updates...")
-    current_techs = get_wappalyzer_techs()
-    current_tags = get_nuclei_tags()
+    current_techs, current_tags = fetch_current()
 
-    # 4. Find Diffs
-    new_techs = set(current_techs) - set(state["techs"])
-    removed_techs = set(state["techs"]) - set(current_techs)
-    new_tags = set(current_tags) - set(state["tags"])
+    # 4. Find Diffs (What is actually NEW)
+    added_techs = current_techs - set(state["techs"])
+    added_tags = current_tags - set(state["tags"])
+    removed_techs = set(state["techs"]) - current_techs
 
-    if not new_techs and not new_tags and not removed_techs:
-        print("[+] Everything is up to date! No changes found.")
+    # 5. Handle AI Prompt Flag
+    if "--ai-prompt" in sys.argv:
+        # Find techs that are in the system but NOT in the map
+        unmapped = [t for t in current_techs if t not in mapping]
+        
+        task = {
+            "action": "AI_REVIEW_REQUEST",
+            "context": "Identify mappings between these technologies and Nuclei tags.",
+            "unmapped_technologies": unmapped[:100], # Limit to 100 for token safety
+            "new_nuclei_tags_found": list(added_tags)[:50],
+            "total_unmapped_remaining": len(unmapped)
+        }
+        print("\n--- COPY THIS TO GEMINI ---")
+        print(json.dumps(task, indent=2))
+        print("---------------------------")
         return
 
-    print(f"[!] Changes detected:")
-    if new_techs: print(f"    - New Techs: {len(new_techs)}")
-    if new_tags: print(f"    - New Tags: {len(new_tags)}")
-    if removed_techs: print(f"    - Removed Techs: {len(removed_techs)}")
-
-    # 5. Handle removals
-    for tech in removed_techs:
-        if tech in mapping:
-            del mapping[tech]
-
-    # 6. Attempt auto-mapping for new techs
-    pending_review = []
-    for tech in new_techs:
-        slug = tech.lower().replace(".js", "").replace(" ", "-")
-        slug = re.sub(r'[^a-z0-9\-]', '', slug)
+    # 6. Update State
+    if added_techs or added_tags or removed_techs:
+        print(f"[!] Changes since last sync:")
+        if added_techs: print(f"    + {len(added_techs)} New Techs")
+        if added_tags: print(f"    + {len(added_tags)} New Tags")
+        if removed_techs: print(f"    - {len(removed_techs)} Removed Techs")
         
-        if slug in current_tags:
-            mapping[tech] = slug
-        elif slug.split("-")[0] in current_tags:
-            mapping[tech] = slug.split("-")[0]
-        else:
-            pending_review.append(tech)
-
-    # 7. Save Results
-    with open(MAP_FILE, "w") as f:
-        json.dump(mapping, f, indent=4, sort_keys=True)
-    
-    with open(STATE_FILE, "w") as f:
-        json.dump({"techs": current_techs, "tags": current_tags}, f)
-
-    print(f"\n[+] Mapping updated. Total mappings: {len(mapping)}")
-    
-    if pending_review:
-        print(f"\n[?] {len(pending_review)} new techs need AI review.")
-        print("[>] Run this command to see the list for Gemini:")
-        print("    python3 scripts/nuclei_mapper.py --list-new")
+        with open(STATE_FILE, "w") as f:
+            json.dump({"techs": list(current_techs), "tags": list(current_tags)}, f)
+        print("[+] State updated.")
+    else:
+        print("[+] Everything is already in sync with GitHub.")
 
 if __name__ == "__main__":
-    import sys
-    if "--list-new" in sys.argv:
-        if os.path.exists(STATE_FILE) and os.path.exists(MAP_FILE):
-            with open(STATE_FILE, "r") as f: state = json.load(f)
-            with open(MAP_FILE, "r") as f: mapping = json.load(f)
-            new_but_unmapped = [t for t in get_wappalyzer_techs() if t not in mapping]
-            print("\n--- NEW TECHS FOR AI REVIEW ---")
-            print(json.dumps(new_but_unmapped, indent=2))
-            print("------------------------------")
-        else:
-            print("[!] Run the script without flags first to establish state.")
-    else:
-        main()
+    main()
