@@ -57,8 +57,9 @@ var (
 var resumeMgr *util.ResumeManager
 
 var rootCmd = &cobra.Command{
-	Use:   "hyperwapp [flags]",
+	Use:   "hyperwapp [flags] [input]",
 	Short: "HyperWapp is a CLI reconnaissance utility",
+	Args:  cobra.ArbitraryArgs,
 	Long: `
    __  __                      _       __                
   / / / /_  ______  ___  _____| |     / /___ _____  ____ 
