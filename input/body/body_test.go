@@ -1,6 +1,7 @@
 package body_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 func TestParseBodyOnlyHTML(t *testing.T) {
 	testFilePath := "../../testdata/body-only/page.html"
 
-	inputsCh, err := body.ParseBodyOnly(testFilePath, nil, 1)
+	inputsCh, err := body.ParseBodyOnly(context.Background(), testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestParseBodyOnlyHTML(t *testing.T) {
 func TestParseBodyOnlyJS(t *testing.T) {
 	testFilePath := "../../testdata/body-only/script.js"
 
-	inputsCh, err := body.ParseBodyOnly(testFilePath, nil, 1)
+	inputsCh, err := body.ParseBodyOnly(context.Background(), testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}
@@ -69,7 +70,7 @@ func TestParseBodyOnlyJS(t *testing.T) {
 func TestParseBodyOnlyCSS(t *testing.T) {
 	testFilePath := "../../testdata/body-only/style.css"
 
-	inputsCh, err := body.ParseBodyOnly(testFilePath, nil, 1)
+	inputsCh, err := body.ParseBodyOnly(context.Background(), testFilePath, nil, 1)
 	if err != nil {
 		t.Fatalf("ParseBodyOnly failed: %v", err)
 	}

@@ -2,6 +2,7 @@ package fff
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,8 +14,12 @@ import (
 )
 
 // ParseFFF parses an fff directory structure and returns a channel of OfflineInput.
-func ParseFFF(root string, skipFunc func(string) bool) (<-chan *model.OfflineInput, error) {
-	outputCh := make(chan *model.OfflineInput)
+func ParseFFF(ctx context.Context, root string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput, 1000)
+
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 
 	go func() {
 		defer close(outputCh)
@@ -29,6 +34,8 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan *model.OfflineInp
 		}
 
 		var wg sync.WaitGroup
+		semaphore := make(chan struct{}, concurrency)
+
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				continue
@@ -38,68 +45,80 @@ func ParseFFF(root string, skipFunc func(string) bool) (<-chan *model.OfflineInp
 			domainPath := filepath.Join(root, domain)
 
 			wg.Add(1)
-			go func(dPath, dom string) {
-				defer wg.Done()
-				
-				// Map to group hash -> {headers, body} within THIS domain only
-				filesByHash := make(map[string]map[string]string)
-				
-				_ = filepath.WalkDir(dPath, func(path string, d os.DirEntry, err error) error {
-					if err != nil || d.IsDir() {
-						return nil
-					}
-
-					if strings.HasSuffix(path, ".headers") || strings.HasSuffix(path, ".body") {
-						hash := extractHash(filepath.Base(path))
-						if hash == "" {
+			select {
+			case <-ctx.Done():
+				wg.Done()
+				return
+			case semaphore <- struct{}{}:
+				go func(dPath, dom string) {
+					defer wg.Done()
+					defer func() { <-semaphore }()
+					
+					// Map to group hash -> {headers, body} within THIS domain only
+					filesByHash := make(map[string]map[string]string)
+					
+					_ = filepath.WalkDir(dPath, func(path string, d os.DirEntry, err error) error {
+						if err != nil || d.IsDir() {
 							return nil
 						}
 
-						if _, ok := filesByHash[hash]; !ok {
-							filesByHash[hash] = make(map[string]string)
-						}
-
-						if strings.HasSuffix(path, ".headers") {
-							filesByHash[hash]["headers"] = path
-						} else {
-							filesByHash[hash]["body"] = path
-						}
-					}
-					return nil
-				})
-
-				// Once this domain is walked, stream its results immediately
-				for _, files := range filesByHash {
-					// RESUME CHECK
-					if skipFunc != nil {
-						hPath, hasHeaders := files["headers"]
-						if hasHeaders {
-							if skipFunc(hPath) {
-								input := model.OfflineInputPool.Get().(*model.OfflineInput)
-								input.Reset()
-								input.Path = hPath
-								input.Skipped = true
-								outputCh <- input
-								continue
+						if strings.HasSuffix(path, ".headers") || strings.HasSuffix(path, ".body") {
+							hash := extractHash(filepath.Base(path))
+							if hash == "" {
+								return nil
 							}
-						} else if bPath, ok := files["body"]; ok {
-							if skipFunc(bPath) {
-								input := model.OfflineInputPool.Get().(*model.OfflineInput)
-								input.Reset()
-								input.Path = bPath
-								input.Skipped = true
-								outputCh <- input
-								continue
+
+							if _, ok := filesByHash[hash]; !ok {
+								filesByHash[hash] = make(map[string]string)
+							}
+
+							if strings.HasSuffix(path, ".headers") {
+								filesByHash[hash]["headers"] = path
+							} else {
+								filesByHash[hash]["body"] = path
 							}
 						}
-					}
+						return nil
+					})
 
-					inputs := buildFFFInputsFromGroup(files, dPath, dom)
-					for _, input := range inputs {
-						outputCh <- input
+					// Once this domain is walked, stream its results immediately
+					for _, files := range filesByHash {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							// RESUME CHECK
+							if skipFunc != nil {
+								hPath, hasHeaders := files["headers"]
+								if hasHeaders {
+									if skipFunc(hPath) {
+										input := model.OfflineInputPool.Get().(*model.OfflineInput)
+										input.Reset()
+										input.Path = hPath
+										input.Skipped = true
+										outputCh <- input
+										continue
+									}
+								} else if bPath, ok := files["body"]; ok {
+									if skipFunc(bPath) {
+										input := model.OfflineInputPool.Get().(*model.OfflineInput)
+										input.Reset()
+										input.Path = bPath
+										input.Skipped = true
+										outputCh <- input
+										continue
+									}
+								}
+							}
+
+							inputs := buildFFFInputsFromGroup(files, dPath, dom)
+							for _, input := range inputs {
+								outputCh <- input
+							}
+						}
 					}
-				}
-			}(domainPath, domain)
+				}(domainPath, domain)
+			}
 		}
 		wg.Wait()
 	}()
@@ -117,11 +136,9 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []*mo
 
 	if hPath, ok := files["headers"]; ok {
 		sourcePath = hPath
-		parsedHeaders, err := parseHeadersFile(hPath)
+		err := parseHeadersFile(hPath, input.Headers)
 		if err != nil {
 			util.Warn("Error parsing fff headers file %s: %v", hPath, err)
-		} else {
-			input.Headers = parsedHeaders
 		}
 		fileURLPath = hPath
 	}
@@ -149,15 +166,14 @@ func buildFFFInputsFromGroup(files map[string]string, root, domain string) []*mo
 	return []*model.OfflineInput{input}
 }
 
-// parseHeadersFile parses an fff .headers file into an http.Header map.
-func parseHeadersFile(path string) (map[string][]string, error) {
+// parseHeadersFile parses an fff .headers file into the provided headers map.
+func parseHeadersFile(path string, headers map[string][]string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open headers file %s: %w", path, err)
+		return fmt.Errorf("failed to open headers file %s: %w", path, err)
 	}
 	defer file.Close()
 
-	headers := make(map[string][]string)
 	scanner := bufio.NewScanner(file)
 
 	// Read the first line and check for HTTP status
@@ -188,10 +204,10 @@ func parseHeadersFile(path string) (map[string][]string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading headers file %s: %w", path, err)
+		return fmt.Errorf("error reading headers file %s: %w", path, err)
 	}
 
-	return headers, nil
+	return nil
 }
 
 // DeriveURL constructs a URL from the fff root, file path, and domain.

@@ -1,10 +1,11 @@
 package output
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort" // Added sort package import
+	"sort"
 	"strings"
 	"sync"
 
@@ -15,8 +16,9 @@ import (
 // MDWriter implements the Writer interface for Markdown output.
 type MDWriter struct {
 	filePath string
-	mu       sync.Mutex // To ensure safe concurrent writes if needed
+	mu       sync.Mutex // To ensure safe concurrent writes
 	file     *os.File
+	buf      *bufio.Writer
 	mode     string
 	tempFile *os.File
 }
@@ -27,7 +29,13 @@ func NewMDWriter(filePath string) (*MDWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Markdown output file %s: %w", filePath, err)
 	}
-	return &MDWriter{filePath: filePath, file: file, mode: "all"}, nil
+	buf := bufio.NewWriterSize(file, 4*1024*1024) // 4MB buffer
+	return &MDWriter{
+		filePath: filePath,
+		file:     file,
+		buf:      buf,
+		mode:     "all",
+	}, nil
 }
 
 // Write outputs detections for individual targets to the Markdown file or buffers them for domain mode.
@@ -81,7 +89,7 @@ func (w *MDWriter) Write(detections []model.Detection) error {
 		}
 		builder.WriteString("\n---\n\n")
 
-		if _, err := w.file.WriteString(builder.String()); err != nil {
+		if _, err := w.buf.WriteString(builder.String()); err != nil {
 			return fmt.Errorf("failed to write to Markdown file: %w", err)
 		}
 	}
@@ -91,6 +99,8 @@ func (w *MDWriter) Write(detections []model.Detection) error {
 
 // SetMode updates the output mode.
 func (w *MDWriter) SetMode(mode string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.mode = mode
 }
 
@@ -130,11 +140,11 @@ func (w *MDWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) erro
 		}
 		builder.WriteString("\n---\n\n")
 
-		if _, err := w.file.WriteString(builder.String()); err != nil {
+		if _, err := w.buf.WriteString(builder.String()); err != nil {
 			return fmt.Errorf("failed to write to Markdown file: %w", err)
 		}
 	}
-	return nil
+	return w.buf.Flush()
 }
 
 // Close closes the underlying file and handles domain aggregation if needed.
@@ -204,10 +214,13 @@ func (w *MDWriter) Close() {
 				builder.WriteString(fmt.Sprintf("- **%s**\n", tech))
 			}
 			builder.WriteString("\n---\n\n")
-			_, _ = w.file.WriteString(builder.String())
+			_, _ = w.buf.WriteString(builder.String())
 		}
 	}
 
+	if w.buf != nil {
+		w.buf.Flush()
+	}
 	if w.file != nil {
 		w.file.Close()
 	}

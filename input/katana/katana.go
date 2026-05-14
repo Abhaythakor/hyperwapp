@@ -3,6 +3,7 @@ package katana
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/url" // Added import
@@ -25,8 +26,8 @@ func IsKatanaFileContent(data []byte) bool {
 }
 
 // ParseKatanaDir parses a katana output directory and returns a channel of OfflineInput.
-func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
-	outputCh := make(chan *model.OfflineInput)
+func ParseKatanaDir(ctx context.Context, root string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput, 1000)
 
 	if concurrency <= 0 {
 		concurrency = 1
@@ -43,21 +44,33 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for path := range fileQueue {
-					// Infer domain from the immediate parent directory name
-					parentDir := filepath.Base(filepath.Dir(path))
-					domain := parentDir
-					if domain == "." || domain == "responses" || domain == "katana-output" {
-						domain = ""
-					}
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case path, ok := <-fileQueue:
+						if !ok {
+							return
+						}
+						// Infer domain from the immediate parent directory name
+						parentDir := filepath.Base(filepath.Dir(path))
+						domain := parentDir
+						if domain == "." || domain == "responses" || domain == "katana-output" {
+							domain = ""
+						}
 
-					inputs, err := ParseKatanaFile(path, domain, skipFunc)
-					if err != nil {
-						util.Warn("Error parsing katana file %s: %v", path, err)
-						continue
-					}
-					for _, input := range inputs {
-						outputCh <- input
+						inputs, err := ParseKatanaFile(path, domain, skipFunc)
+						if err != nil {
+							util.Warn("Error parsing katana file %s: %v", path, err)
+							continue
+						}
+						for _, input := range inputs {
+							select {
+							case <-ctx.Done():
+								return
+							case outputCh <- input:
+							}
+						}
 					}
 				}
 			}()
@@ -76,7 +89,11 @@ func ParseKatanaDir(root string, skipFunc func(string) bool, concurrency int) (<
 
 			fileName := d.Name()
 			if strings.Contains(fileName, ".txt") {
-				fileQueue <- path
+				select {
+				case <-ctx.Done():
+					return filepath.SkipAll
+				case fileQueue <- path:
+				}
 			}
 			return nil
 		})
@@ -115,8 +132,6 @@ func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([
 	}
 
 	requestHeaders := parseRequestHeadersKatana(bytes.NewReader(parts.RequestHeaders))
-	responseHeaders := parseResponseHeadersKatana(bytes.NewReader(parts.ResponseHeaders))
-	body := parts.Body
 	domain := http.ExtractHost(requestHeaders, fallbackDomain)
 	url := reconstructURLKatana(parts.RequestLine, requestHeaders, domain, parts.InitialURL)
 
@@ -126,8 +141,8 @@ func ParseKatanaFile(path, fallbackDomain string, skipFunc func(string) bool) ([
 	input.Reset()
 	input.Domain = domain
 	input.URL = url
-	input.Headers = responseHeaders
-	input.Body = body
+	parseResponseHeadersKatana(bytes.NewReader(parts.ResponseHeaders), input.Headers)
+	input.Body = parts.Body
 	input.Path = path
 	
 	return []*model.OfflineInput{input}, nil
@@ -277,9 +292,8 @@ func trimDelimiter(data []byte) []byte {
 	return data
 }
 
-// parseResponseHeadersKatana parses raw response headers into a map.
-func parseResponseHeadersKatana(r io.Reader) map[string][]string {
-	headers := make(map[string][]string)
+// parseResponseHeadersKatana parses raw response headers into the provided headers map.
+func parseResponseHeadersKatana(r io.Reader, headers map[string][]string) {
 	reader := bufio.NewReader(r) // Use bufio.Reader directly
 
 	for {
@@ -303,7 +317,6 @@ func parseResponseHeadersKatana(r io.Reader) map[string][]string {
 			break
 		}
 	}
-	return headers
 }
 
 // parseRequestHeadersKatana parses raw request headers into a map.

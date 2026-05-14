@@ -2,12 +2,14 @@ package custom
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Abhaythakor/hyperwapp/model"
 	"github.com/Abhaythakor/hyperwapp/util"
@@ -15,8 +17,8 @@ import (
 )
 
 // ParseCustom handles parsing based on the YAML configuration.
-func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
-	outputCh := make(chan *model.OfflineInput)
+func ParseCustom(ctx context.Context, path string, cc *CompiledConfig, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput, 1000)
 
 	go func() {
 		defer close(outputCh)
@@ -29,21 +31,28 @@ func ParseCustom(path string, cc *CompiledConfig, skipFunc func(string) bool, co
 
 		if fileInfo.IsDir() {
 			_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+				select {
+				case <-ctx.Done():
+					return filepath.SkipAll
+				default:
+				}
+
 				if err != nil || d.IsDir() {
 					return nil
 				}
-				processCustomFile(p, outputCh, cc, skipFunc)
+				processCustomFile(ctx, p, outputCh, cc, skipFunc, concurrency)
 				return nil
 			})
 		} else {
-			processCustomFile(path, outputCh, cc, skipFunc)
+			processCustomFile(ctx, path, outputCh, cc, skipFunc, concurrency)
 		}
 	}()
 
 	return outputCh, nil
 }
 
-func processCustomFile(path string, outputCh chan<- *model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool) {
+// processCustomFile uses a high-speed block reader to parallelize the "JSON Tax" processing.
+func processCustomFile(ctx context.Context, path string, outputCh chan<- *model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool, concurrency int) {
 	file, err := os.Open(path)
 	if err != nil {
 		util.Warn("Failed to open file %s: %v", path, err)
@@ -51,82 +60,122 @@ func processCustomFile(path string, outputCh chan<- *model.OfflineInput, cc *Com
 	}
 	defer file.Close()
 
-	reader := bufio.NewReaderSize(file, 1024*1024) // 1MB read buffer
+	if cc.Config.Format != "json" {
+		// Fallback for non-JSON formats (rarely used for 17GB files)
+		processCustomFileLegacy(ctx, file, path, outputCh, cc, skipFunc)
+		return
+	}
 
-	if cc.Config.Format == "json" {
-		lineNum := 0
-		for {
-			lineNum++
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				uniqueID := fmt.Sprintf("%s#L%d", path, lineNum)
+	// HIGH SPEED JSONL PIPELINE
+	// 1. Single sequential reader (Best for HDD)
+	// 2. Worker pool for JSON decoding (Best for 2-core CPU)
+	
+	lineQueue := make(chan struct {
+		lineNum int
+		data    []byte
+	}, 1000)
+
+	var wg sync.WaitGroup
+	// Use exactly 'concurrency' workers for parsing
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range lineQueue {
+				uniqueID := fmt.Sprintf("%s#L%d", path, item.lineNum)
 				
-				// FAST SKIP: Check resume log before doing anything else
+				// FAST SKIP: Check resume log
 				if skipFunc != nil && skipFunc(uniqueID) {
 					input := model.OfflineInputPool.Get().(*model.OfflineInput)
 					input.Reset()
 					input.Path = uniqueID
 					input.Skipped = true
 					outputCh <- input
-					if err != nil { break }
+					model.LinePool.Put(item.data)
 					continue
 				}
 
-				// Move the JSON parsing work into the channel
-				// We wrap the raw data in OfflineInput so the WORKERS handle the GJSON work.
 				input := model.OfflineInputPool.Get().(*model.OfflineInput)
 				input.Reset()
 				input.Path = uniqueID
-				input.RawJSON = make([]byte, len(line))
-				copy(input.RawJSON, line) // Must copy because line is a reuse buffer
-				
-				outputCh <- input
+				input.RawJSON = item.data // Direct assignment, no copy!
+
+				select {
+				case <-ctx.Done():
+					return
+				case outputCh <- input:
+				}
 			}
-			if err != nil {
-				break
+		}()
+	}
+
+	reader := bufio.NewReaderSize(file, 2*1024*1024) // 2MB read buffer
+	lineNum := 0
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			lineNum++
+			// Get a pooled buffer for the next line
+			buf := model.LinePool.Get().([]byte)
+			buf = append(buf[:0], line...)
+			
+			select {
+			case <-ctx.Done():
+				goto cleanup
+			case lineQueue <- struct {
+				lineNum int
+				data    []byte
+			}{lineNum, buf}:
 			}
 		}
-	} else if cc.Config.Format == "regex" {
-		// Similar optimization for line-based Regex
-		if cc.Config.Regex.RecordSeparator == "\n" || cc.Config.Regex.RecordSeparator == "" {
-			lineNum := 0
-			for {
-				lineNum++
-				line, err := reader.ReadBytes('\n')
-				if len(line) > 0 {
-					uniqueID := fmt.Sprintf("%s#R%d", path, lineNum)
-					if skipFunc != nil && skipFunc(uniqueID) {
-						input := model.OfflineInputPool.Get().(*model.OfflineInput)
-						input.Reset()
-						input.Path = uniqueID
-						input.Skipped = true
-						outputCh <- input
-						if err != nil { break }
-						continue
-					}
-					
+		if err != nil {
+			break
+		}
+	}
+
+cleanup:
+	close(lineQueue)
+	wg.Wait()
+}
+
+// processCustomFileLegacy handles regex and other non-standard formats.
+func processCustomFileLegacy(ctx context.Context, file *os.File, path string, outputCh chan<- *model.OfflineInput, cc *CompiledConfig, skipFunc func(string) bool) {
+	reader := bufio.NewReaderSize(file, 1024*1024)
+	lineNum := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			lineNum++
+			line, err := reader.ReadBytes('\n')
+			if len(line) > 0 {
+				uniqueID := fmt.Sprintf("%s#R%d", path, lineNum)
+				if skipFunc != nil && skipFunc(uniqueID) {
 					input := model.OfflineInputPool.Get().(*model.OfflineInput)
 					input.Reset()
 					input.Path = uniqueID
-					input.RawRegex = make([]byte, len(line))
-					copy(input.RawRegex, line)
-
+					input.Skipped = true
 					outputCh <- input
+					continue
 				}
-				if err != nil {
-					break
-				}
-			}
-		} else {
-			// For complex separators, we stick to the existing logic but keep it safe
-			data, _ := os.ReadFile(path)
-			records := cc.RecordSep.Split(string(data), -1)
-			for _, record := range records {
-				if strings.TrimSpace(record) == "" { continue }
+				
+				buf := model.LinePool.Get().([]byte)
+				buf = append(buf[:0], line...)
+
 				input := model.OfflineInputPool.Get().(*model.OfflineInput)
 				input.Reset()
-				PopulateFromRegex([]byte(record), input, cc)
-				outputCh <- input
+				input.Path = uniqueID
+				input.RawRegex = buf
+
+				select {
+				case <-ctx.Done():
+					return
+				case outputCh <- input:
+				}
+			}
+			if err != nil {
+				return
 			}
 		}
 	}
@@ -134,18 +183,17 @@ func processCustomFile(path string, outputCh chan<- *model.OfflineInput, cc *Com
 
 func PopulateFromJSON(data []byte, out *model.OfflineInput, cc *CompiledConfig) {
 	cfg := cc.Config.JSON
-	res := gjson.ParseBytes(data)
-	if !res.IsObject() {
-		return
-	}
-
-	out.URL = res.Get(cfg.URLPath).String()
-	out.Domain = res.Get(cfg.DomainPath).String()
-	out.Body = []byte(res.Get(cfg.BodyPath).String())
+	
+	// Optimization: Use GetManyBytes for faster multi-path extraction in a single pass
+	results := gjson.GetManyBytes(data, cfg.URLPath, cfg.DomainPath, cfg.BodyPath)
+	
+	out.URL = results[0].String()
+	out.Domain = results[1].String()
+	out.Body = []byte(results[2].String())
 
 	// Headers (populate existing map)
 	if cfg.HeadersPath != "" {
-		res.Get(cfg.HeadersPath).ForEach(func(key, value gjson.Result) bool {
+		gjson.GetBytes(data, cfg.HeadersPath).ForEach(func(key, value gjson.Result) bool {
 			k := key.String()
 			if value.IsArray() {
 				for _, item := range value.Array() {

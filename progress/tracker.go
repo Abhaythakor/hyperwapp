@@ -191,12 +191,12 @@ func (t *Tracker) printProgress(force bool) {
 
 		if t.isLogMode {
 			// ULTRA-MINI Bar for Termux (Fits on any phone, no wrap = no duplicates)
-			// Format: [+] 32% | 6037/18797 | 1201/s
-			progressLine = fmt.Sprintf("[+] %s | %d/%d | %.0f/s", 
+			// Format: [+] 32% | 6037/18797 | 1.2/s
+			progressLine = fmt.Sprintf("[+] %s | %d/%d | %.1f/s", 
 				percent, completed, total, rps)
 		} else {
 			// Standard PC Bar
-			progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.0f/s | %s",
+			progressLine = fmt.Sprintf("[+] %s | %d/%d | S:%s | E:%s | %.1f/s | %s",
 				t.color.Cyan(percent),
 				completed, total,
 				t.color.Green(fmt.Sprintf("%d", success)),

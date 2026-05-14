@@ -1,6 +1,7 @@
 package input
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -188,6 +189,13 @@ func CountOffline(path string, concurrency int, hasCustomConfig bool) (uint32, e
 	return count.Load(), nil
 }
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 1024*1024)
+		return &b
+	},
+}
+
 func countLines(path string) (uint32, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -196,8 +204,11 @@ func countLines(path string) (uint32, error) {
 	defer file.Close()
 
 	var count uint32
-	// Use a 1MB buffer for reading
-	buf := make([]byte, 1024*1024)
+	// Use a pooled 1MB buffer for reading
+	bufPtr := bufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer bufferPool.Put(bufPtr)
+
 	var lastChar byte
 	for {
 		n, err := file.Read(buf)
@@ -241,7 +252,7 @@ func isTargetFile(fileName string, format OfflineFormat) bool {
 }
 
 // ParseOffline dispatches the parsing to the correct handler based on detected format.
-func ParseOffline(path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan *model.OfflineInput, error) {
+func ParseOffline(ctx context.Context, path string, skipFunc func(string) bool, concurrency int, customCfg *custom.CompiledConfig) (<-chan *model.OfflineInput, error) {
 	outputCh := make(chan *model.OfflineInput, 1000) // Buffer the bridge
 
 	format := DetectOfflineFormat(path, customCfg != nil)
@@ -258,11 +269,11 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int, cust
 
 		switch format {
 		case FormatCustom:
-			inputSourceCh, parseErr = custom.ParseCustom(path, customCfg, skipFunc, concurrency)
+			inputSourceCh, parseErr = custom.ParseCustom(ctx, path, customCfg, skipFunc, concurrency)
 		case FormatFFF:
-			inputSourceCh, parseErr = fff.ParseFFF(path, skipFunc)
+			inputSourceCh, parseErr = fff.ParseFFF(ctx, path, skipFunc, concurrency)
 		case FormatKatanaDir:
-			inputSourceCh, parseErr = katana.ParseKatanaDir(path, skipFunc, concurrency)
+			inputSourceCh, parseErr = katana.ParseKatanaDir(ctx, path, skipFunc, concurrency)
 		case FormatKatanaFile:
 			var inputs []*model.OfflineInput
 			inputs, parseErr = katana.ParseKatanaFile(path, "", skipFunc)
@@ -275,9 +286,9 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int, cust
 				inputSourceCh = ch
 			}
 		case FormatRawHTTP:
-			inputSourceCh, parseErr = raw.ParseRawHTTP(path, skipFunc, concurrency)
+			inputSourceCh, parseErr = raw.ParseRawHTTP(ctx, path, skipFunc, concurrency)
 		case FormatBodyOnly:
-			inputSourceCh, parseErr = body.ParseBodyOnly(path, skipFunc, concurrency)
+			inputSourceCh, parseErr = body.ParseBodyOnly(ctx, path, skipFunc, concurrency)
 		default:
 			util.Warn("Unsupported offline format: %s", format)
 			return
@@ -289,8 +300,20 @@ func ParseOffline(path string, skipFunc func(string) bool, concurrency int, cust
 		}
 
 		// Stream inputs from the source channel to the output channel
-		for input := range inputSourceCh {
-			outputCh <- input
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case input, ok := <-inputSourceCh:
+				if !ok {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case outputCh <- input:
+				}
+			}
 		}
 	}()
 

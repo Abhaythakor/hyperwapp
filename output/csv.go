@@ -1,18 +1,23 @@
 package output
 
 import (
+	"bufio"
 	"encoding/csv"
 	"os"
+	"sync"
 	"time"
 
-	"github.com/Abhaythakor/hyperwapp/aggregate" // Added aggregate package import
+	"github.com/Abhaythakor/hyperwapp/aggregate"
 	"github.com/Abhaythakor/hyperwapp/model"
 )
 
 // CSVWriter implements the Writer interface for CSV output.
 type CSVWriter struct {
+	file   *os.File
 	writer *csv.Writer
+	buf    *bufio.Writer
 	mode   string
+	mu     sync.Mutex
 }
 
 // NewCSVWriter creates a new CSVWriter.
@@ -33,20 +38,32 @@ func NewCSVWriter(filePath string, appendMode bool) (*CSVWriter, error) {
 		return nil, err
 	}
 
-	w := csv.NewWriter(file)
+	buf := bufio.NewWriterSize(file, 4*1024*1024) // 4MB buffer
+	w := csv.NewWriter(buf)
+	
 	// Write header only if new file
 	if isNew {
 		header := []string{"domain", "url", "technology", "source", "path", "evidence", "confidence", "timestamp"}
 		if err := w.Write(header); err != nil {
+			file.Close()
 			return nil, err
 		}
+		w.Flush()
 	}
 
-	return &CSVWriter{writer: w, mode: "all"}, nil
+	return &CSVWriter{
+		file:   file,
+		writer: w,
+		buf:    buf,
+		mode:   "all",
+	}, nil
 }
 
 // Write outputs detections for individual targets to the CSV file.
 func (w *CSVWriter) Write(detections []model.Detection) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	for _, d := range detections {
 		url := d.URL
 		if w.mode == "domain" {
@@ -71,11 +88,16 @@ func (w *CSVWriter) Write(detections []model.Detection) error {
 
 // SetMode updates the output mode.
 func (w *CSVWriter) SetMode(mode string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.mode = mode
 }
 
 // WriteAggregated outputs aggregated detections to the CSV file.
 func (w *CSVWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	for _, agg := range aggregated {
 		for _, d := range agg.Detections {
 			record := []string{
@@ -99,5 +121,9 @@ func (w *CSVWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) err
 
 // Close flushes any buffered data and closes the underlying file.
 func (w *CSVWriter) Close() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.writer.Flush()
+	w.buf.Flush()
+	w.file.Close()
 }

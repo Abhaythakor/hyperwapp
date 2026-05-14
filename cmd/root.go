@@ -208,13 +208,13 @@ ADDITIONAL INFO:
 
 		if proxyAddr != "" {
 			inputModeVal = "proxy"
-			tracker, resultCh = runProxy(proxyAddr, wappalyzerEngine)
+			tracker, resultCh = runProxy(ctx, proxyAddr, wappalyzerEngine)
 		} else if offline {
 			inputModeVal = "offline"
-			tracker, resultCh = runOffline(inputSource, wappalyzerEngine)
+			tracker, resultCh = runOffline(ctx, inputSource, wappalyzerEngine)
 		} else {
 			inputModeVal = "online"
-			tracker, resultCh = runOnline(inputSource, wappalyzerEngine)
+			tracker, resultCh = runOnline(ctx, inputSource, wappalyzerEngine)
 		}
 
 		// Run result handler in the background
@@ -265,11 +265,9 @@ func handleResults(resultCh <-chan []model.Detection, tracker *progress.Tracker,
 			continue
 		}
 
-		// Map to Nuclei Tags
-		for i := range detections {
-			tag := detect.MapToNucleiTag(detections[i].Technology)
-			if tag != "" {
-				detections[i].NucleiTags = []string{tag}
+		// Collect unique tags for final summary
+		for _, d := range detections {
+			for _, tag := range d.NucleiTags {
 				if _, exists := tagMap[tag]; !exists {
 					tagMap[tag] = struct{}{}
 					allNucleiTags = append(allNucleiTags, tag)
@@ -312,7 +310,7 @@ func isInputFromPipe() bool {
 	return !term.IsTerminal(int(os.Stdin.Fd()))
 }
 
-func runProxy(addr string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
+func runProxy(ctx context.Context, addr string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	tracker := progress.NewTracker(0, silent, !disableColor)
 	
 	// Create channels
@@ -338,29 +336,41 @@ func runProxy(addr string, engine *detect.WappalyzerEngine) (*progress.Tracker, 
 		go func() {
 			defer wg.Done()
 
-			for input := range proxyInputCh {
-				tracker.AddTotal(1) // Increment total as requests come in
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case input, ok := <-proxyInputCh:
+					if !ok {
+						return
+					}
+					tracker.AddTotal(1) // Increment total as requests come in
 
-				currentInputType := model.InputTypeOffline
-				if headersOnly {
-					currentInputType = model.SourceHeadersOnly
-				} else if bodyOnly {
-					currentInputType = model.SourceBodyOnly
-				}
+					currentInputType := model.InputTypeOffline
+					if headersOnly {
+						currentInputType = model.SourceHeadersOnly
+					} else if bodyOnly {
+						currentInputType = model.SourceBodyOnly
+					}
 
-				detections, err := engine.Detect(input.Headers, input.Body, currentInputType)
-				if err != nil {
-					util.Warn("Failed to detect technologies for proxy input %s: %v", input.URL, err)
-					tracker.IncrementError()
-					continue
-				}
+					detections, err := engine.Detect(input.Headers, input.Body, currentInputType)
+					if err != nil {
+						util.Warn("Failed to detect technologies for proxy input %s: %v", input.URL, err)
+						tracker.IncrementError()
+						continue
+					}
 
-				for i := range detections {
-					detections[i].Domain = input.Domain
-					detections[i].URL = input.URL
+					for i := range detections {
+						detections[i].Domain = input.Domain
+						detections[i].URL = input.URL
+						// Parallel mapping
+						if tag := detect.MapToNucleiTag(detections[i].Technology); tag != "" {
+							detections[i].NucleiTags = []string{tag}
+						}
+					}
+					resultChWorker <- detections
+					tracker.IncrementSuccess()
 				}
-				resultChWorker <- detections
-				tracker.IncrementSuccess()
 			}
 		}()
 	}
@@ -373,7 +383,7 @@ func runProxy(addr string, engine *detect.WappalyzerEngine) (*progress.Tracker, 
 	return tracker, resultChWorker
 }
 
-func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
+func runOffline(ctx context.Context, inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	absInputSource, err := filepath.Abs(inputSource)
 	if err != nil {
 		util.Fatal("Error resolving absolute path for input: %v", err)
@@ -402,7 +412,7 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 	tracker.AddTotal(total)
 	tracker.FinalizeTotal()
 
-	offlineInputCh, err := input.ParseOffline(absInputSource, resumeMgr.IsCompleted, concurrency, customCfg)
+	offlineInputCh, err := input.ParseOffline(ctx, absInputSource, resumeMgr.IsCompleted, concurrency, customCfg)
 	if err != nil {
 		util.Fatal("Error initializing offline parsing: %v", err)
 	}
@@ -419,8 +429,16 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 	// 1. Start the Parser (Producer) in background
 	go func() {
 		defer close(offlineWorkerInputCh)
-		for offInput := range offlineInputCh {
-			offlineWorkerInputCh <- offInput
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case offInput, ok := <-offlineInputCh:
+				if !ok {
+					return
+				}
+				offlineWorkerInputCh <- offInput
+			}
 		}
 	}()
 
@@ -430,61 +448,85 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 		go func() {
 			defer wg.Done()
 			
-			for offInput := range offlineWorkerInputCh {
-				// Handle SKIPPED items (Resume)
-				if offInput.Skipped {
-					tracker.IncrementSuccess()
-					model.OfflineInputPool.Put(offInput)
-					continue
-				}
-
-				id := offInput.Path
-				if id == "" { id = offInput.URL }
-				if id == "" { id = offInput.Domain }
-
-				if resumeMgr.IsCompleted(id) {
-					tracker.IncrementSuccess()
-					model.OfflineInputPool.Put(offInput)
-					continue
-				}
-
-				// PARALLEL EXTRACTION for Custom Configs
-				if customCfg != nil {
-					if len(offInput.RawJSON) > 0 {
-						custom.PopulateFromJSON(offInput.RawJSON, offInput, customCfg)
-					} else if len(offInput.RawRegex) > 0 {
-						custom.PopulateFromRegex(offInput.RawRegex, offInput, customCfg)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case offInput, ok := <-offlineWorkerInputCh:
+					if !ok {
+						return
 					}
-				}
+					// Handle SKIPPED items (Resume)
+					if offInput.Skipped {
+						tracker.IncrementSuccess()
+						model.OfflineInputPool.Put(offInput)
+						continue
+					}
 
-				// Select Detection Strategy
-				currentInputType := model.InputTypeOffline
-				if headersOnly {
-					currentInputType = model.SourceHeadersOnly
-				} else if bodyOnly {
-					currentInputType = model.SourceBodyOnly
-				}
+					id := offInput.Path
+					if id == "" { id = offInput.URL }
+					if id == "" { id = offInput.Domain }
 
-				// HEAVY OPERATION: The Regex Engine
-				detections, err := engine.Detect(offInput.Headers, offInput.Body, currentInputType)
-				if err != nil {
-					util.Warn("Failed: %s (%v)", id, err)
-					tracker.IncrementError()
+					if resumeMgr.IsCompleted(id) {
+						tracker.IncrementSuccess()
+					// RECYCLE BUFFERS
+					if len(offInput.RawJSON) > 0 {
+						model.LinePool.Put(offInput.RawJSON)
+					} else if len(offInput.RawRegex) > 0 {
+						model.LinePool.Put(offInput.RawRegex)
+					}
 					model.OfflineInputPool.Put(offInput)
 					continue
+					}
+					// PARALLEL EXTRACTION for Custom Configs
+					if customCfg != nil {
+						if len(offInput.RawJSON) > 0 {
+							custom.PopulateFromJSON(offInput.RawJSON, offInput, customCfg)
+						} else if len(offInput.RawRegex) > 0 {
+							custom.PopulateFromRegex(offInput.RawRegex, offInput, customCfg)
+						}
+					}
+
+					// Select Detection Strategy
+					currentInputType := model.InputTypeOffline
+					if headersOnly {
+						currentInputType = model.SourceHeadersOnly
+					} else if bodyOnly {
+						currentInputType = model.SourceBodyOnly
+					}
+
+					// HEAVY OPERATION: The Regex Engine
+					detections, err := engine.Detect(offInput.Headers, offInput.Body, currentInputType)
+					if err != nil {
+						util.Warn("Failed: %s (%v)", id, err)
+						tracker.IncrementError()
+						model.OfflineInputPool.Put(offInput)
+						continue
+					}
+
+					for i := range detections {
+						detections[i].Domain = offInput.Domain
+						detections[i].URL = offInput.URL
+						// Parallel mapping
+						if tag := detect.MapToNucleiTag(detections[i].Technology); tag != "" {
+							detections[i].NucleiTags = []string{tag}
+						}
+					}
+
+					resultChWorker <- detections
+					resumeMgr.MarkCompleted(id)
+					tracker.IncrementSuccess()
+
+					// RECYCLE BUFFERS
+					if len(offInput.RawJSON) > 0 {
+						model.LinePool.Put(offInput.RawJSON)
+					} else if len(offInput.RawRegex) > 0 {
+						model.LinePool.Put(offInput.RawRegex)
+					}
+
+					// RECYCLE INPUT
+					model.OfflineInputPool.Put(offInput)
 				}
-
-				for i := range detections {
-					detections[i].Domain = offInput.Domain
-					detections[i].URL = offInput.URL
-				}
-
-				resultChWorker <- detections
-				resumeMgr.MarkCompleted(id)
-				tracker.IncrementSuccess()
-
-				// RECYCLE
-				model.OfflineInputPool.Put(offInput)
 			}
 		}()
 	}
@@ -497,15 +539,15 @@ func runOffline(inputSource string, engine *detect.WappalyzerEngine) (*progress.
 	return tracker, resultChWorker
 }
 
-func runOnline(inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
+func runOnline(ctx context.Context, inputSource string, engine *detect.WappalyzerEngine) (*progress.Tracker, <-chan []model.Detection) {
 	targets, err := input.ResolveInput(inputSource, false)
 	if err != nil {
 		util.Fatal("Error resolving input: %v", err)
 	}
 
 	tracker := progress.NewTracker(uint32(len(targets)), silent, !disableColor)
-	targetCh := make(chan model.Target)
-	resultChWorker := make(chan []model.Detection)
+	targetCh := make(chan model.Target, 1000)
+	resultChWorker := make(chan []model.Detection, 2000)
 	var wg sync.WaitGroup
 
 	numWorkers := concurrency
@@ -518,41 +560,58 @@ func runOnline(inputSource string, engine *detect.WappalyzerEngine) (*progress.T
 		go func() {
 			defer wg.Done()
 			
-			for target := range targetCh {
-				if resumeMgr.IsCompleted(target.URL) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case target, ok := <-targetCh:
+					if !ok {
+						return
+					}
+					if resumeMgr.IsCompleted(target.URL) {
+						tracker.IncrementSuccess()
+						continue
+					}
+					
+					headers, body, err := online.FetchOnline(ctx, target, timeout)
+					if err != nil {
+						util.Warn("Failed: %s (%v)", target.URL, err)
+						tracker.IncrementError()
+						continue
+					}
+
+					detections, err := engine.Detect(headers, body, model.SourceWappalyzer)
+					if err != nil {
+						util.Warn("Failed to detect for %s: %v", target.URL, err)
+						tracker.IncrementError()
+						continue
+					}
+
+					for i := range detections {
+						detections[i].Domain = target.Domain
+						detections[i].URL = target.URL
+						// Parallel mapping
+						if tag := detect.MapToNucleiTag(detections[i].Technology); tag != "" {
+							detections[i].NucleiTags = []string{tag}
+						}
+					}
+
+					resultChWorker <- detections
+					resumeMgr.MarkCompleted(target.URL)
 					tracker.IncrementSuccess()
-					continue
 				}
-				
-				headers, body, err := online.FetchOnline(target, timeout)
-				if err != nil {
-					util.Warn("Failed: %s (%v)", target.URL, err)
-					tracker.IncrementError()
-					continue
-				}
-
-				detections, err := engine.Detect(headers, body, model.SourceWappalyzer)
-				if err != nil {
-					util.Warn("Failed to detect for %s: %v", target.URL, err)
-					tracker.IncrementError()
-					continue
-				}
-
-				for i := range detections {
-					detections[i].Domain = target.Domain
-					detections[i].URL = target.URL
-				}
-
-				resultChWorker <- detections
-				resumeMgr.MarkCompleted(target.URL)
-				tracker.IncrementSuccess()
 			}
 		}()
 	}
 
 	go func() {
 		for _, target := range targets {
-			targetCh <- target
+			select {
+			case <-ctx.Done():
+				close(targetCh)
+				return
+			case targetCh <- target:
+			}
 		}
 		close(targetCh)
 	}()

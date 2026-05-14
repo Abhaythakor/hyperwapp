@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// LinePool is a global pool for reusable byte buffers for raw data ingestion.
+var LinePool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, 1024*1024) // 1MB initial capacity
+	},
+}
+
 // OfflineInput represents the normalized input from offline sources.
 type OfflineInput struct {
 	Domain   string
@@ -25,8 +32,13 @@ func (i *OfflineInput) Reset() {
 	i.Path = ""
 	i.Skipped = false
 	i.Body = nil
+
+	// Note: We don't Reset RawJSON/RawRegex here because they might point to pooled buffers
+	// that need to be returned to LinePool explicitly before Reset if they were used.
+	// However, for safety, we clear the references.
 	i.RawJSON = nil
 	i.RawRegex = nil
+
 	// Clear the headers map without reallocating
 	if i.Headers != nil {
 		for k := range i.Headers {

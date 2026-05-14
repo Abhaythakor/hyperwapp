@@ -3,6 +3,7 @@ package raw
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt" // Added fmt
 	"io"
 	"os"
@@ -45,8 +46,8 @@ func IsRawHTTPContent(data []byte) bool {
 }
 
 // ParseRawHTTP parses a file containing one or more raw HTTP responses.
-func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
-	outputCh := make(chan *model.OfflineInput)
+func ParseRawHTTP(ctx context.Context, path string, skipFunc func(string) bool, concurrency int) (<-chan *model.OfflineInput, error) {
+	outputCh := make(chan *model.OfflineInput, 1000)
 
 	go func() {
 		defer close(outputCh)
@@ -58,38 +59,50 @@ func ParseRawHTTP(path string, skipFunc func(string) bool, concurrency int) (<-c
 		}
 		defer file.Close()
 
-		rawResponseCh := splitHTTPResponses(file)
+		rawResponseCh := splitHTTPResponses(ctx, file)
 
 		index := 0
-		for rawResp := range rawResponseCh {
-			index++
-			// For Raw HTTP, we create a unique ID using path + index 
-			// since one file can have many responses.
-			uniquePath := fmt.Sprintf("%s#%d", path, index)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case rawResp, ok := <-rawResponseCh:
+				if !ok {
+					return
+				}
+				index++
+				// For Raw HTTP, we create a unique ID using path + index 
+				// since one file can have many responses.
+				uniquePath := fmt.Sprintf("%s#%d", path, index)
 
-			if skipFunc != nil && skipFunc(uniquePath) {
+				if skipFunc != nil && skipFunc(uniquePath) {
+					input := model.OfflineInputPool.Get().(*model.OfflineInput)
+					input.Reset()
+					input.Path = uniquePath
+					input.Skipped = true
+					outputCh <- input
+					continue
+				}
+
 				input := model.OfflineInputPool.Get().(*model.OfflineInput)
 				input.Reset()
+				
+				parseRawHeaders(bytes.NewReader(rawResp.Headers), input.Headers)
+				body := rawResp.Body
+				domain := http.ExtractHost(input.Headers, "unknown")
+
+				input.Domain = domain
+				input.URL = ""
+				input.Body = body
 				input.Path = uniquePath
-				input.Skipped = true
-				outputCh <- input
-				continue
+
+				select {
+				case <-ctx.Done():
+					return
+				case outputCh <- input:
+					util.Debug("Created Raw HTTP OfflineInput for Domain: %s (ID: %s)", domain, uniquePath)
+				}
 			}
-
-			headers := parseRawHeaders(bytes.NewReader(rawResp.Headers))
-			body := rawResp.Body
-			domain := http.ExtractHost(headers, "unknown")
-
-			input := model.OfflineInputPool.Get().(*model.OfflineInput)
-			input.Reset()
-			input.Domain = domain
-			input.URL = ""
-			input.Headers = headers
-			input.Body = body
-			input.Path = uniquePath
-
-			outputCh <- input
-			util.Debug("Created Raw HTTP OfflineInput for Domain: %s (ID: %s)", domain, uniquePath)
 		}
 	}()
 
@@ -103,8 +116,8 @@ type rawHTTPResponse struct {
 }
 
 // splitHTTPResponses splits a byte slice containing one or more raw HTTP responses.
-func splitHTTPResponses(r io.Reader) <-chan rawHTTPResponse {
-	outputCh := make(chan rawHTTPResponse)
+func splitHTTPResponses(ctx context.Context, r io.Reader) <-chan rawHTTPResponse {
+	outputCh := make(chan rawHTTPResponse, 100)
 
 	go func() {
 		defer close(outputCh)
@@ -113,34 +126,48 @@ func splitHTTPResponses(r io.Reader) <-chan rawHTTPResponse {
 
 		var currentResponse bytes.Buffer
 		for {
-			line, err := reader.ReadBytes('\n')
-			if err != nil && err != io.EOF {
-				util.Warn("Error reading line from raw HTTP input: %v", err)
-				break
-			}
-
-			// Check for the start of a new HTTP response (e.g., "HTTP/1.1 200 OK")
-			// and if currentResponse already has content (i.e., not the very first line of the file)
-			if bytes.HasPrefix(line, []byte("HTTP/1.")) && currentResponse.Len() > 0 {
-				// Process the previous response before starting a new one
-				resp := parseSingleHTTPResponse(bytes.NewReader(currentResponse.Bytes())) // Pass io.Reader
-				if resp != nil {
-					outputCh <- *resp
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line, err := reader.ReadBytes('\n')
+				if err != nil && err != io.EOF {
+					util.Warn("Error reading line from raw HTTP input: %v", err)
+					return
 				}
-				currentResponse.Reset() // Reset for the new response
-			}
 
-			currentResponse.Write(line)
-			if err == io.EOF {
-				break
+				// Check for the start of a new HTTP response (e.g., "HTTP/1.1 200 OK")
+				// and if currentResponse already has content (i.e., not the very first line of the file)
+				if bytes.HasPrefix(line, []byte("HTTP/1.")) && currentResponse.Len() > 0 {
+					// Process the previous response before starting a new one
+					resp := parseSingleHTTPResponse(bytes.NewReader(currentResponse.Bytes())) // Pass io.Reader
+					if resp != nil {
+						select {
+						case <-ctx.Done():
+							return
+						case outputCh <- *resp:
+						}
+					}
+					currentResponse.Reset() // Reset for the new response
+				}
+
+				currentResponse.Write(line)
+				if err == io.EOF {
+					goto finalize
+				}
 			}
 		}
 
+	finalize:
 		// Process the last response
 		if currentResponse.Len() > 0 {
 			resp := parseSingleHTTPResponse(bytes.NewReader(currentResponse.Bytes())) // Pass io.Reader
 			if resp != nil {
-				outputCh <- *resp
+				select {
+				case <-ctx.Done():
+					return
+				case outputCh <- *resp:
+				}
 			}
 		}
 	}()
@@ -191,9 +218,8 @@ func parseSingleHTTPResponse(r io.Reader) *rawHTTPResponse {
 	}
 }
 
-// parseRawHeaders parses raw HTTP headers into a map.
-func parseRawHeaders(r io.Reader) map[string][]string {
-	headers := make(map[string][]string)
+// parseRawHeaders parses raw HTTP headers into the provided headers map.
+func parseRawHeaders(r io.Reader, headers map[string][]string) {
 	reader := bufio.NewReader(r) // Use bufio.Reader directly
 	isFirstLine := true
 	for {
@@ -230,5 +256,4 @@ func parseRawHeaders(r io.Reader) map[string][]string {
 			break
 		}
 	}
-	return headers
 }

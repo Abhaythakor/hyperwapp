@@ -1,10 +1,11 @@
 package output
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort" // Added sort package import
+	"sort"
 	"strings"
 	"sync"
 
@@ -15,8 +16,9 @@ import (
 // TXTWriter implements the Writer interface for plain text output.
 type TXTWriter struct {
 	filePath string
-	mu       sync.Mutex // To ensure safe concurrent writes if needed
+	mu       sync.Mutex // To ensure safe concurrent writes
 	file     *os.File
+	buf      *bufio.Writer
 	mode     string
 	tempFile *os.File
 }
@@ -27,7 +29,13 @@ func NewTXTWriter(filePath string) (*TXTWriter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TXT output file %s: %w", filePath, err)
 	}
-	return &TXTWriter{filePath: filePath, file: file, mode: "all"}, nil
+	buf := bufio.NewWriterSize(file, 4*1024*1024) // 4MB buffer
+	return &TXTWriter{
+		filePath: filePath,
+		file:     file,
+		buf:      buf,
+		mode:     "all",
+	}, nil
 }
 
 // Write outputs detections for individual targets to the TXT file or buffers them for domain mode.
@@ -81,7 +89,7 @@ func (w *TXTWriter) Write(detections []model.Detection) error {
 		}
 		builder.WriteString("\n")
 
-		if _, err := w.file.WriteString(builder.String()); err != nil {
+		if _, err := w.buf.WriteString(builder.String()); err != nil {
 			return fmt.Errorf("failed to write to TXT file: %w", err)
 		}
 	}
@@ -91,6 +99,8 @@ func (w *TXTWriter) Write(detections []model.Detection) error {
 
 // SetMode updates the output mode.
 func (w *TXTWriter) SetMode(mode string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.mode = mode
 }
 
@@ -130,11 +140,11 @@ func (w *TXTWriter) WriteAggregated(aggregated []aggregate.AggregatedDomain) err
 		}
 		builder.WriteString("\n")
 
-		if _, err := w.file.WriteString(builder.String()); err != nil {
+		if _, err := w.buf.WriteString(builder.String()); err != nil {
 			return fmt.Errorf("failed to write to TXT file: %w", err)
 		}
 	}
-	return nil
+	return w.buf.Flush()
 }
 
 // Close closes the underlying file and handles domain aggregation if needed.
@@ -179,8 +189,6 @@ func (w *TXTWriter) Close() {
 		sort.Strings(sortedDomains)
 
 		for _, d := range sortedDomains {
-			// Temporarily unlock to call WriteAggregated which also locks (or just inline it)
-			// For safety, let's inline it here since we already have the lock.
 			agg := domainMap[d]
 			builder := strings.Builder{}
 			builder.WriteString(fmt.Sprintf("Domain: %s\n", agg.Domain))
@@ -206,10 +214,13 @@ func (w *TXTWriter) Close() {
 				builder.WriteString(fmt.Sprintf("    - %s\n", tech))
 			}
 			builder.WriteString("\n")
-			_, _ = w.file.WriteString(builder.String())
+			_, _ = w.buf.WriteString(builder.String())
 		}
 	}
 
+	if w.buf != nil {
+		w.buf.Flush()
+	}
 	if w.file != nil {
 		w.file.Close()
 	}
